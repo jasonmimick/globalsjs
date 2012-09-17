@@ -1,0 +1,11 @@
+{
+ "name":"globalsjs",
+ "description":"a mongoish api for the globals database",
+ "keywords": ["globals", "db", "cache", "intersystems"],
+ "version":"0.0.1",
+ "repository": {"type": "git", "url": "git://github.com/gett/globalsjs.git"},
+ "author": "Jason Mimick <jmimick@gmail.com>",
+ "contributors": [],
+ "main":"./index.js",
+ "dependencies": {"util":">=0.1.0", "cache":"1.x.x"}
+}
