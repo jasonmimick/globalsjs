@@ -19,3 +19,6 @@ var db = new globals.Db(databaseURL);
 db.connect([collections]);
 ```
 
+Indexing
+--------
+
