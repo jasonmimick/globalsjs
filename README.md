@@ -22,3 +22,15 @@ db.connect([collections]);
 Indexing
 --------
 
+## globalsd
+
+globalsd is a network deamon for the Globals database. It allows you to run your globalsjs client
+across network connections.
+
+To start:
+
+	>globalsd/bin/globalsd --dbpath <path to GLOBALS_HOME, defaults process.env.GLOBALS_HOME>
+
+
+Options:
+	
