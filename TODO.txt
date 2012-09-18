@@ -1,0 +1,15 @@
+globalsjs - todo list
+
+x1. get unit tests working in new repo
+2. finish async version of find()
+	--- it looks like one connection to cache/globalsdb cannot handle more than one
+			concurrent async call. SO, will need to refactor a bunch, and create new connections
+			for each call.
+		-- the sync calls can all share one connection
+3. work on deamon 
+	+ make a "dbcommand" object
+	+ BSON it across the wire
+	+ BSON results over the wire
+	+ refactor calls from client (globalsjs.Db.Collection) to use network 
+	+ URL scheme, do what mongojs does
+

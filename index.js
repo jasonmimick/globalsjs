@@ -13,7 +13,7 @@ function debug(msg) {
 			}
 		}
 	}
-	if ( !(process.env.GLOBALSJS_DEBUG_TRACE === 'true') ) { 
+	if ( (process.env.GLOBALSJS_DEBUG_TRACE === 'true') ) { 
 		console.trace();
 	}
 }
@@ -69,6 +69,9 @@ function Collection(collectionName, dbInstance) {
 	self.update_index = update_index;
 	self.start_query_stats = start_query_stats;
 	self.stop_query_stats = stop_query_stats;
+	self.build_index_glo_ref_from_query=build_index_glo_ref_from_query;
+	self.spin_find = spin_find;
+	self.spin_find_index = spin_find_index;
 	self.index_glo_ref = function() {
 		return { global : self.name+COLLECTION_INDEX_IDENTIFIER, subscripts : [] };
 	};
@@ -93,7 +96,72 @@ function Collection(collectionName, dbInstance) {
 	function init() {
 		// load system data about this collection, if any...
 	}
-
+	function spin_find(gdb,glo_ref,query,callback) {
+		gdb.order(glo_ref, function(e,resultXX) {
+			debug('spin_find order callack');
+			debug(resultXX);
+			if ( resultXX.result !== '' ) { 
+				var gr = { global : resultXX.global, subscripts : resultXX.subscripts };
+				debug('async scan order spin', gr);
+				gdb.retrieve( gr, 'object', function(error,result) {
+					var sendResultToCaller = false;
+					debug(query);
+					if ( !isEmptyObject(query) ) {
+						var resultKeys = Object.keys(result.object);
+						for(var i=0;i<resultKeys.length;i++) {
+							if ( query[resultKeys[i]] !== undefined ) {
+								if ( query[resultKeys[i]]==result.object[resultKeys[i]] ) {
+									sendResultToCaller = true;
+								}
+							}
+						}
+					} else {
+						sendResultToCaller = true;
+					}
+					if ( sendResultToCaller ) {
+						callback(error,result.object);  // send results to caller
+					}
+					self.spin_find(gdb,gr,query,callback); // find more
+				});
+			} else { // we're done, close the connection
+				//gdb.close();
+				console.log('ran off end?');console.dir(resultXX);
+				return;
+			} 	
+		});
+	}
+	function spin_find_index(gdb,glo_ref,callback) {
+		debug('spin_find_index() glo_ref',glo_ref);
+		gdb.order(glo_ref, function(error,resultXX) {
+			if ( error ) { 
+				console.dir(error);console.dir(resultXX);
+				console.dir(glo_ref);
+				callback(error,{});
+				return;
+			}
+			debug('spin_find_index order callback error ++++++++++++++++++++++');
+			debug(error);
+			debug('spin_find_index order callback resultXX **********************');
+			debug(resultXX);
+			if ( resultXX.result !== '' ) { 
+				var gri = { global : resultXX.global, subscripts : resultXX.subscripts };
+				var gr = { global : self.name, subscripts : [resultXX.result] };
+				//console.log('gri');console.dir(gri);
+				//console.log('gr');console.dir(gr);
+				//debug('async scan order spin', gr, gri);
+				gdb.retrieve( gr, 'object', function(error,result) {
+					//console.dir('spin_find_index,retrieve callback ~~~~~~~~~~~~~~~~~~~~~~');
+					//console.dir(error);console.dir(result);
+					callback(error,result.object);  // send results to caller
+					self.spin_find_index(gdb,gri,callback); // find more
+				});
+			} else { // we're done, close the connection
+				//try {
+				gdb.close();
+				//} catch(exp) { console.dir(exp); }
+			} 	
+		});
+	}
 	function load_indexes() {
 		var index = '';
 		var glo_ref = self.system_glo_ref();
@@ -146,22 +214,22 @@ function Collection(collectionName, dbInstance) {
 		if (!( obj instanceof Array )) {
 			obj = [ obj ];
 		}
-		//debug(obj);
-		//debug(self.indexes);
+		debug(obj);
+		debug(self.indexes);
 		for(var i=0; i<obj.length; i++) {
 			// what is another process adds an index - how will we know???
 			for(var j=0; j<self.indexes.length; j++) { 
-				//debug(j+'===>'+self.indexes[j]);
+				debug(j+'===>'+self.indexes[j]);
 				var index_key = Object.keys(self.indexes[j])[0];
 				var index_collation_order = self.indexes[j][index_key];
-				//debug('index_collation_order='+index_collation_order);
+				debug('index_collation_order='+index_collation_order);
 				// TODO implement collation order
-				//debug('index_key='+index_key);
+				debug('index_key='+index_key);
 				if (obj[i][index_key]!==undefined) { 	// this obj has a prop for this index
 					var value = obj[i][index_key];
 					glo_ref.subscripts = [ index_key, value, obj[i]['__ID'] ];
 					glo_ref.data = '';
-					//debug(glo_ref);
+					debug(glo_ref);
 					if ( operation == self.index_operation.SAVE ) {
 						var sc = self.db.cacheConnection.set(glo_ref);
 					} else if ( operation == self.index_operation.REMOVE ) {
@@ -169,10 +237,11 @@ function Collection(collectionName, dbInstance) {
 					} 
 
 					// TODO deal with async callback
-					//debug(sc);
+					debug(sc);
 				}
 			}
 		} 
+		debug('leaving update_index');
 	}
 	function first_object(resultSet) {		// pull out the first object and return
 		var first = false;
@@ -248,6 +317,39 @@ function Collection(collectionName, dbInstance) {
 		stat_ref.data.runtime = (stat_ref.data.stop - stat_ref.data.start);
 		var sc = self.db.cacheConnection.update(stat_ref,'object');
 	}
+	function build_index_glo_ref_from_query(query,callback) {
+			var queryKeys = Object.keys(query);
+			var index_glo_ref = {};
+			var done = false;
+			for(var i=0; i<queryKeys.length; i++) {
+				if ( done ) { break; }
+				// do we have an index for this queryKey
+				// ONLY SUPPORTS SIMPLE - 1 level indexes right now...
+				// TODO - plug in some kind of optimizer here... like which index is better
+				// if there are choices
+				for(var j=0; j<self.indexes.length; j++) {
+					if ( done ) { break; }
+					var indexKeys = Object.keys(self.indexes[j]);
+					//debug(indexKeys);
+					for(var k=0; k<indexKeys.length; k++) {
+						if ( queryKeys[i]===indexKeys[k] ) {
+							var index_glo_ref = self.index_glo_ref();
+							index_glo_ref.subscripts.push( queryKeys[i] );
+							index_glo_ref.subscripts.push( query[queryKeys[i]] ); // push the value we are looking for
+							index_glo_ref.subscripts.push(0);
+							done = true;
+							break;
+						}
+					}
+				}
+			}
+			//console.dir('build_index_ref');console.dir(callback);console.dir(index_glo_ref);
+			if ( gotCallback(callback) ) {
+				callback({},index_glo_ref);
+			} else {
+				return index_glo_ref;
+			}
+		}
 } 
 var STAT_GLO_REF = function() {
 	return { global : '%globalsjs', subscripts : [] };
@@ -291,62 +393,44 @@ Collection.prototype.find = function(query, callback) {
 		gloRef.subscripts = query.subscripts;
 	}	
 	if ( gotCallback(callback) ) {
-		// TODO need to refactor async calls to not use retrieve
-		self.db.cacheConnection.retrieve(gloRef, 'object', function(error,result) {
-			debug('find async..... error,query',error,query);
-			debug(query);
-			if ( !error && !isEmptyObject(query) ) {
-				self.filter_results(query, result, callback);
-			} else {
-				debug('about to callback');
-				callback(error, self.convert_object_list_to_array(result));
+		debug('gotCallback!');
+		//var gdb = new cache.Cache();
+		var gdb = self.db.cacheConnection;
+		//gdb.open( self.db.options.___connection, function(error,result) {
+			//debug('back from gdb open');
+			//debug(error);
+			//debug(result);
+			//if ( error ) { debug('calling callback');callback(error,result) }
+			if ( !isEmptyObject(query) && self.indexes.length>0 ) {
+				debug('query not empty',query);
+				var idxref = self.build_index_glo_ref_from_query(query);
+				debug('async find with query---');
+				debug(idxref);
+				self.spin_find_index(gdb,idxref,callback);
+				debug('aync find() - back from spin_find_index');
+				//callback({}, { done : true });
+			} else { 		// full table scan
+				debug('async full table scan');
+				var id_glo_ref = { global : gloRef.global, subscripts : gloRef.subscripts };
+				id_glo_ref.subscripts.push(0);
+				var spin = true;
+				debug(id_glo_ref);
+				var ii =0;
+				self.spin_find(gdb,id_glo_ref,query,callback);
 			}
-		});
+		//});
 	} else {
-		//debug('find.sync - ');debug(gloRef);
-		// TODO - is this a bug or something, retrieve in 'object' 
-		// mode will only return 63 objects, no matter what???
-		//var results = {};
-		//results = self.db.cacheConnection.retrieve(gloRef,'object');
-		/**/
 		var results = [];
 		// default will be full 'table scan' - 
 		// if we have a query and actually have an index on a property of the query,
 		// then we can fetch id's from the index.
-		// TODO!!!!!!!!!!!!!!!!TODO
 		var ids = [];
 		if ( query != undefined ) {
-			var queryKeys = Object.keys(query);
-			//debug(queryKeys);
-			//debug( self.indexes );
-			for(var i=0; i<queryKeys.length; i++) {
-				if ( ids.length>0 ) { break; }
-				// do we have an index for this queryKey
-				// TODO - plug in some kind of optimizer here... like which index is better
-				// if there are choices
-				for(var j=0; j<self.indexes.length; j++) {
-					if ( ids.length>0 ) { break; }
-					var indexKeys = Object.keys(self.indexes[j]);
-					//debug(indexKeys);
-					for(var k=0; k<indexKeys.length; k++) {
-						if ( queryKeys[i]===indexKeys[k] ) {
-							var index_gloRef = self.index_glo_ref();
-							index_gloRef.subscripts.push( queryKeys[i] );
-							index_gloRef.subscripts.push( query[queryKeys[i]] ); // push the value we are looking for
-							index_gloRef.subscripts.push(0);
-							//debug('query - found index, using it!');
-							//debug(index_gloRef);
-							//ids = self.db.cacheConnection.retrieve(index_gloRef, 'list');
-							while ( (index_gloRef = self.db.cacheConnection.order(index_gloRef)).result!='') {
-								//debug(index_gloRef);
-								ids.push(index_gloRef.result);
-							}
-			
-							//debug('index scan returned:');
-							//debug(ids);
-							break;				
-						}
-					}
+			index_gloRef = self.build_index_glo_ref_from_query(query);
+			debug(index_gloRef);
+			if ( !isEmptyObject(index_gloRef) ) {
+				while ( (index_gloRef = self.db.cacheConnection.order(index_gloRef)).result!='') {
+					ids.push(index_gloRef.result);
 				}
 			}
 		}
@@ -359,18 +443,12 @@ Collection.prototype.find = function(query, callback) {
 				//debug(id_glo_ref);
 				ids.push(id_glo_ref.result);
 			}
-			//debug(gloRef);
-			//debug('ids.length='+ids.length);
 		}
-		//debug(ids);
-		//debug('find -- ids['+(ids.length-1)+']='+ids[ids.length-1]);
 		ids.forEach( function(id) {
 			gloRef.subscripts = [id];
 			var obj = self.db.cacheConnection.retrieve( gloRef, 'object' );
 			results.push(obj.object);
 		});
-		//debug('results.length='+results.length);
-		/**/
 		if ( query !== undefined ) {
 			var rr = self.filter_results(query, results);		
 			if ( stat_ref !== undefined ) {
@@ -378,7 +456,6 @@ Collection.prototype.find = function(query, callback) {
 			}
 			return rr;
 		} else {
-			//return self.convert_object_list_to_array(results);
 			if ( stat_ref !== undefined ) {
 				self.stop_query_stats(stat_ref,results.length);
 			}
@@ -415,6 +492,8 @@ Collection.prototype.add = function(object, callback) {
 	if ( gotCallback(callback) ) {
 		self.db.cacheConnection.update(updateArgs,'object',updateCB);
 	} else {
+		console.log('-----');
+		console.dir(updateArgs);
 		return self.db.cacheConnection.update(updateArgs,'object');
 	}
 }
@@ -522,6 +601,15 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 	var self = this;
 	//debug('cachedb - Server connect');
 	var cacheConnection = new cache.Cache(); 
+	process.on('exit', function() {
+		debug('Server.connect - process exit event hander');
+		debug(cacheConnection);
+		try {
+			cacheConnection.close();
+		} catch(Exception) {
+				debug(Exception);
+		}
+	});		
 	if ( gotCallback(callback) ) {
 		cacheConnection.open( options.___connection, function(error, result) {
 			dbInstance.cacheConnection = cacheConnection;
@@ -530,6 +618,7 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 	} else {
 		var r = cacheConnection.open( options.___connection );
 		dbInstance.cacheConnection = cacheConnection;
+		debug('server.connect dbInstance.cacheConnection',cacheConnection,r);
 		return r;
 	}
 }
@@ -549,11 +638,41 @@ function Db(databaseName, serverConfig, options) {
 	self.cacheConnection = {};
 	self.init_collections = init_collections;
 	self.recordQueryStats = false;
+	self.cleanup = cleanup;
 	self.process_options = process_options;
 	self.process_options(options);
+	// wire up exit handler to make sure we clean up!
+	process.on('exit', function() {
+		debug('caught exit');
+		self.cleanup();
+	});
+	/*
+	process.on('uncaughtException', function() {
+		debug('caught uncaughtException',arguments);
+		console.trace();
+		//self.cleanup();
+	});
+	*/
+	function cleanup() {
+		debug('cleanup()');
+		debug('self.cacheConnection',self.cacheConnection);
+		if ( self.server !== undefined ) {
+			if ( self.server.cacheConnection !== undefined ) {
+				debug('closing cacheConnection');
+				self.server.cacheConnection.close();
+			}
+		}
+	}
 	function init_collections(options) {
+		var self = this;
+		// save off options - async requires new connections
+		//self.options = options;
+		//console.dir(self.options);
 		// load up the run-time specified collections
 		if ( options.collections !== undefined ) {
+			console.log('@@@@@@@@@@@@@@@@@@@@@@');
+			console.dir(options);
+			console.trace();
 			var rtcols = options.collections;
 			rtcols.forEach(function(name) {
 				self[name] = new Collection(name,self);
@@ -625,6 +744,7 @@ Db.prototype.connect = function(options, callback) {
 	var namespace = "";
 	if ( options.namespace ) { namespace = options.namespace; }
 	options['___connection'] = { path : pathToGlobalsMGR, username : userName, password : password, namespace : namespace};
+	debug('Db.connection options',options);
 	if ( gotCallback(callback) ) {
 		self.server.connect(this,options, function(error, result) {	
 			if ( !error ) {
@@ -634,7 +754,7 @@ Db.prototype.connect = function(options, callback) {
 			});
 	} else {
 		var r = self.server.connect(this, options);
-		//debug(r);
+		debug(r);
 		self.init_collections(options);
 		return r;
 	}

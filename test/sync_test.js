@@ -6,9 +6,9 @@
 var util = require('util');
 var utd = require('./test_driver.js');
 //var cachedb = require('./globalsjs/lib/cachedb.js');
-var cachedb = require('./globalsjs');
+var cachedb = require('../../globalsjs');
 var path = "/Users/jasonmimick/dev/globalsdb/mgr";
-var LOAD_SIZE = 5000;
+var LOAD_SIZE = 50;
 var db = new cachedb.Db(path);
 var x = db.connect({collections: ['testsync']});
 //var x = db.connect();
@@ -42,13 +42,15 @@ utd.__assertEquals(dataset2.length, LOAD_SIZE, "did not read back "+LOAD_SIZE+" 
 var firstObj = db.testsync.findOne();
 //console.dir(firstObj);
 utd.__assertEquals( firstObj.firstName, 'Jim Jimmy0', "findOne did not return the first object");
-debugger;
+//debugger;
 //utd.__assertTrue( (1===0), "Did this test work?");
 removeResult = db.testsync.remove(firstObj);
+//console.dir(removeResult);
 utd.__assertTrue ( removeResult.ok === 1, "remove of "+util.inspect(firstObj)+" collection failed");
 
 // check there are LOAD_SIZE-1 objects in the db now.
 var set3 = db.testsync.find();
+//console.log('set3.length='+set3.length);
 utd.__assertEquals(set3.length, (LOAD_SIZE-1), "after removing first length was not "+(LOAD_SIZE-1));
 
 // check find with query

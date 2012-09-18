@@ -1,0 +1,4 @@
+export nodeRootPrefix=/Users/jasonmimick/dev/globalsdb/node_v0.6.19
+export GLOBALS_HOME=/Users/jasonmimick/dev/globalsdb
+. $GLOBALS_HOME/node_v0.6.19/.bashrc
+
