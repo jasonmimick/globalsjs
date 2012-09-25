@@ -6,7 +6,6 @@ var events = require('events');
 var cachedb = require('../../globalsjs');
 // TODO read from command line
 var GLOBALS_PATH = "/Users/jasonmimick/dev/globalsdb/mgr";
-var LOAD_SIZE = 50;
 var db = new cachedb.Db(GLOBALS_PATH);
 // optionally specify new run-time collections here when you start the deamon?
 var x = db.connect();

@@ -15,8 +15,16 @@ globalsjs is very simple to use:
 
 ``` js
 var globals = require('globalsjs');
+var databaseURL = '/path/to/globalsdb/install/mgr';
+// or if you have the network deamon listening at fooserver.com on port 1234 
+// var databaseURL = "globalsdb://fooserver.com:1234";
 var db = new globals.Db(databaseURL);
 db.connect([collections]);
+db.foo.find({},function(error,result) {
+	console.dir(result);
+	// dumps out all the objects in the 'foo' collection
+	db.close();		// clean up your connection!
+});
 ```
 
 Indexing
@@ -29,7 +37,8 @@ across network connections.
 
 To start:
 
-	>globalsd/bin/globalsd --dbpath <path to GLOBALS_HOME, defaults process.env.GLOBALS_HOME>
+	>node globalsd/index.js <PORT|default 111105>--dbpath <path to GLOBALS_HOME, defaults process.env.GLOBALS_HOME>
+
 
 
 Options:

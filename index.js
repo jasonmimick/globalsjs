@@ -29,14 +29,6 @@ var isEmptyObject = function(o) {
 		for(var x in o) { return false; }  // this is how jQuery checks 'isEmptyObject'
 		return true;
 }
-// proxy the mongodb Server,Db and Collection
-// object with a globalsdb/cache backing
-// each collection will map to one global
-// each collection global will have a reserve "system managed" subscript with the
-// index's you specify by calling "ensureIndex", otherwise, each object
-// uses the increment() api call to get a primary key.
-// constants---
-
 // TODO - move this to private utils object
 function gotCallback(callback) {
 	return ( (callback !== undefined) && (typeof callback === 'function') );
@@ -57,10 +49,12 @@ Collection.non_system_global = function(name) {
 /*
 A Collection maps directly to a global in Cache, one in which
 objects are stored via the globalsdb/node.js api (update/retrive 'object')
+Each collection(global) will have two auxilliary globals - one for indexes, one for system
+stats - a collection called 'foo' (^foo) would have indexes in 'foo1gdb' and meta-data in 
+'foo5gdb' - the 1 stands for 1ndex, the 5 for 5ystem.
 */
 function Collection(collectionName, dbInstance) {
 	var self = this;
-
 	self.name = collectionName;
 	self.db = dbInstance;
 	self.indexes = [];
@@ -126,8 +120,7 @@ function Collection(collectionName, dbInstance) {
 					}
 					self.spin_find(gdb,gr,query,callback); // find more
 				});
-			} else { // we're done, close the connection
-				//gdb.close();
+			} else { 
 				console.log('ran off end?');console.dir(resultXX);
 				return;
 			} 	
@@ -137,8 +130,6 @@ function Collection(collectionName, dbInstance) {
 		debug('spin_find_index() glo_ref',glo_ref);
 		gdb.order(glo_ref, function(error,resultXX) {
 			if ( error ) { 
-				//console.dir(error);console.dir(resultXX);
-				//console.dir(glo_ref);
 				callback(error,{});
 				return;
 			}
@@ -149,12 +140,8 @@ function Collection(collectionName, dbInstance) {
 			if ( resultXX.result !== '' ) { 
 				var gri = { global : resultXX.global, subscripts : resultXX.subscripts };
 				var gr = { global : self.name, subscripts : [resultXX.result] };
-				//console.log('gri');console.dir(gri);
-				//console.log('gr');console.dir(gr);
-				//debug('async scan order spin', gr, gri);
+				debug('async scan order spin', gr, gri);
 				gdb.retrieve( gr, 'object', function(error,result) {
-					//console.dir('spin_find_index,retrieve callback ~~~~~~~~~~~~~~~~~~~~~~');
-					//console.dir(error);console.dir(result);
 					callback(error,result.object);  // send results to caller
 					self.spin_find_index(gdb,gri,callback); // find more
 				});
@@ -189,7 +176,6 @@ function Collection(collectionName, dbInstance) {
 		SAVE : 0,
 		REMOVE : 1
 	};
-	//debug(self.index_operation);
 	function update_index(operation, obj, callback) {
 		debug('update_index');debug(arguments);
 		if ( operation == self.index_operation.SAVE ) {
@@ -207,11 +193,9 @@ function Collection(collectionName, dbInstance) {
 		var glo_ref = self.index_glo_ref();
 		debug('__update_index_save');debug(arguments);
 		if ( obj === undefined ) {
-			//console.trace();
-			//debug(glo_ref);
+			debug(glo_ref);
 			if ( operation == self.index_operation.REMOVE ) {
 					var sc = self.db.cacheConnection.kill(glo_ref);
-					//debug(sc);
 					var sys = self.system_glo_ref();
 					sys.subscripts.push('index');
 					sc = self.db.cacheConnection.kill(sys);
@@ -224,7 +208,7 @@ function Collection(collectionName, dbInstance) {
 		debug(obj);
 		debug(self.indexes);
 		for(var i=0; i<obj.length; i++) {
-			// what is another process adds an index - how will we know???
+			// TODO what if another process adds an index - how will we know???
 			for(var j=0; j<self.indexes.length; j++) { 
 				debug(j+'===>'+self.indexes[j]);
 				var index_key = Object.keys(self.indexes[j])[0];
@@ -266,9 +250,7 @@ function Collection(collectionName, dbInstance) {
 		var filtered = [];
 		//debug(results);
 		//debug(query);
-		//for(var id in results.object ) {
 		for(var i=0; i<results.length; i++) {
-			//var obj = results.object[id];
 			var obj = results[i];
 			// very simple query options now...
 			for(var property in query ) {
@@ -351,7 +333,6 @@ function Collection(collectionName, dbInstance) {
 					}
 				}
 			}
-			//console.dir('build_index_ref');console.dir(callback);console.dir(index_glo_ref);
 			if ( gotCallback(callback) ) {
 				callback({},index_glo_ref);
 			} else {
@@ -442,31 +423,23 @@ Collection.prototype.find = function(query, callback) {
 	}	
 	if ( gotCallback(callback) ) {
 		debug('gotCallback!');
-		//var gdb = new cache.Cache();
 		var gdb = self.db.cacheConnection;
-		//gdb.open( self.db.options.___connection, function(error,result) {
-			//debug('back from gdb open');
-			//debug(error);
-			//debug(result);
-			//if ( error ) { debug('calling callback');callback(error,result) }
-			if ( !isEmptyObject(query) && self.indexes.length>0 ) {
-				debug('query not empty',query);
-				var idxref = self.build_index_glo_ref_from_query(query);
-				debug('async find with query---');
-				debug(idxref);
-				self.spin_find_index(gdb,idxref,callback);
-				debug('aync find() - back from spin_find_index');
-				//callback({}, { done : true });
-			} else { 		// full table scan
-				debug('async full table scan');
-				var id_glo_ref = { global : gloRef.global, subscripts : gloRef.subscripts };
-				id_glo_ref.subscripts.push(0);
-				var spin = true;
-				debug(id_glo_ref);
-				var ii =0;
-				self.spin_find(gdb,id_glo_ref,query,callback);
-			}
-		//});
+		if ( !isEmptyObject(query) && self.indexes.length>0 ) {
+			debug('query not empty',query);
+			var idxref = self.build_index_glo_ref_from_query(query);
+			debug('async find with query---');
+			debug(idxref);
+			self.spin_find_index(gdb,idxref,callback);
+			debug('aync find() - back from spin_find_index');
+		} else { 		// full table scan
+			debug('async full table scan');
+			var id_glo_ref = { global : gloRef.global, subscripts : gloRef.subscripts };
+			id_glo_ref.subscripts.push(0);
+			var spin = true;
+			debug(id_glo_ref);
+			var ii =0;
+			self.spin_find(gdb,id_glo_ref,query,callback);
+		}
 	} else {
 		var results = [];
 		// default will be full 'table scan' - 
@@ -703,6 +676,9 @@ Collection.prototype.reIndex = function(callback) {
 Collection.prototype.dropIndex = function(object, callback) {
 }
 
+
+// TODO don't think we need this 'Server' object, it's not really
+// doing anything
 function Server(serverConfig, options) {
 	//debug('cachedb - Server()');
 	this.config = serverConfig;
@@ -753,7 +729,6 @@ function Db(databaseName, options) {
 	self.databaseName = databaseName;
 	self.cacheConnection = {};
 	self.isRemoteConnection = false;
-	//self.remoteClient = {};
 	self.init_remote_connection = init_remote_connection;
 	self.init_collections = init_collections;
 	self.recordQueryStats = false;
