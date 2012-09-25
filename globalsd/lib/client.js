@@ -21,7 +21,7 @@ function Client(options) {
 				self.resultMode = options.resultMode;
 			}
 		}
-		console.log('client() - got options');console.dir(self);
+		//console.log('client() - got options');console.dir(self);
 	} else {
 		self.port = 12101;
 		self.host = 'localhost';
@@ -43,11 +43,11 @@ Client.prototype.connect = function(options) {
 	var self = this;
 	if ( options !== undefined ) {
 		// able to inject more options
-		console.log('server data event');	
+		//console.log('server data event');	
 	}
 	self.client = net.connect({port: self.port, host : self.host},
   		function(c) { //'connect' listener
-  			console.log('client connected');
+  			//console.log('client connected');
 	});
 	self.client.on('error', function (error) {
 		self.datacb(error);
@@ -57,7 +57,7 @@ Client.prototype.connect = function(options) {
 	var batch_result_size = 0;
 	var batch = [];
 	self.client.on('data', function(data) {
-		console.dir('data event - data='+data);
+		//console.dir('data event - data='+data);
  		var objects = data.toString().split('\n');
 		if ( partial_object.length>0 ) {
 			objects[0] = partial_object + objects[0];
@@ -79,7 +79,7 @@ Client.prototype.connect = function(options) {
 				} else {
 					batch_result_counter++;
 					if ( self.resultMode == self.resultMode_stream ) {	
-						console.log('+++++++++++++++++++++++++++++++++++++++++++++++');
+						//console.log('+++++++++++++++++++++++++++++++++++++++++++++++');
 						self.datacb({},o);		// NOTE: we stream back each object as we get it
 					} else { // batch mode
 						if ( batch_result_counter == batch_result_size ) {
@@ -96,15 +96,15 @@ Client.prototype.connect = function(options) {
 		}	
 	});
 	self.client.on('end', function() {
-  	console.log('client disconnected');
+  	//console.log('client disconnected');
 	});
 }
 Client.prototype.close = function() {
 	var self = this;
-	console.dir('client - close ' + self.client);
-	console.trace();
+	//console.dir('client - close ' + self.client);
+	//console.trace();
 	if ( self.client !== undefined ) {
-		console.log('client - close - calling end()');
+		//console.log('client - close - calling end()');
 		self.client.end();
 	}
 }
@@ -121,15 +121,15 @@ Client.prototype.send = function(data,callback) {
 	var json = JSON.stringify(msg);
 	self.client.write( json );
 	self.client.write(END_OF_MESSAGE);
-	console.log('client wrote');console.dir(json);
+	//console.log('client wrote');console.dir(json);
 } 
 	
 Client.prototype.global_directory = function(callback) {
 	var self = this;
 	var request = {};
 	request.operation = "global_directory";
-	console.dir('about to send request: ');
-	console.dir(request);
+	//console.dir('about to send request: ');
+	//console.dir(request);
 	self.send(request, function (e,r) {
 		callback(e,r);
 	});
