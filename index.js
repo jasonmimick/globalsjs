@@ -20,7 +20,10 @@ function debug(msg) {
 var EventEmitter = require('events').EventEmitter,
  		inherits = require('util').inherits,
 		cache = require('cache'),
-		util = require('util');
+		util = require('util'),
+		fs = require('fs'),
+		url = require('url');
+var globalsd_client = require('./globalsd/lib/client.js');
 var noop = function() {};
 var isEmptyObject = function(o) {
 		for(var x in o) { return false; }  // this is how jQuery checks 'isEmptyObject'
@@ -163,6 +166,10 @@ function Collection(collectionName, dbInstance) {
 		});
 	}
 	function load_indexes() {
+		if ( self.db.isRemoteConnection ) {
+			console.log('load_indexes() - connection was remote, nothing to do');
+			return;
+		}
 		var index = '';
 		var glo_ref = self.system_glo_ref();
 		glo_ref.subscripts.push( 'index', '' ); 
@@ -350,6 +357,26 @@ function Collection(collectionName, dbInstance) {
 				return index_glo_ref;
 			}
 		}
+		/*
+		function remote(operation, params, callback) {
+			var dbreq = {};
+			dbreq.op = operation;
+			dbreq.params = [];
+			if ( params instanceof Array ) {
+				dbreq.params = params;
+			} else {
+				dbreq.params.push(params);
+			}
+			if ( !gotCallback(callback) ) {
+				console.warn("sync not implementd for remote yet!");
+			}
+			self.db.remoteClient.send(dbreq,function(error,result) {
+				console.log('Collection remote - ');
+				console.dir(result);
+				callback(result);
+			});
+		}
+		*/
 } 
 var STAT_GLO_REF = function() {
 	return { global : '%globalsjs', subscripts : [] };
@@ -386,6 +413,25 @@ Collection.prototype.find = function(query, callback) {
 	var stat_ref = undefined;
 	if ( self.db.recordQueryStats ) {
 		stat_ref = self.start_query_stats(query);
+	}
+	console.log('Collection.prototype.find --> query=');console.dir(query);
+	console.log(query instanceof Array); 
+	if ( query instanceof Array ) {
+		query = query.pop();
+	}
+	// if remote, forward to tcp-client-
+	if ( self.db.isRemoteConnection ) {
+		var req = {};
+		req.op = 'find';
+		req.collection = self.name;
+		req.params = [];
+		req.params.push(query);
+		console.dir(req);		
+		if ( gotCallback(callback) ) {
+			self.db.remote_client.send(req,callback);
+			return;
+		} else 
+		return self.db.remote_client.send(req);		
 	}
 	//debug("Collection - find ");
  	var gloRef = {global: self.name, subscripts: []};
@@ -444,21 +490,26 @@ Collection.prototype.find = function(query, callback) {
 				ids.push(id_glo_ref.result);
 			}
 		}
+		//console.dir(ids);
 		ids.forEach( function(id) {
 			gloRef.subscripts = [id];
 			var obj = self.db.cacheConnection.retrieve( gloRef, 'object' );
 			results.push(obj.object);
 		});
-		if ( query !== undefined ) {
+		if ( !isEmptyObject(query) ) {
+			console.log('results.length='+results.length);
 			var rr = self.filter_results(query, results);		
 			if ( stat_ref !== undefined ) {
 				self.stop_query_stats(stat_ref,results.length);
 			}
+			console.log('rr !!!!!!!!~~~~~~~!!!!!!!!!');
+			console.dir(rr);
 			return rr;
 		} else {
 			if ( stat_ref !== undefined ) {
 				self.stop_query_stats(stat_ref,results.length);
 			}
+			console.log('about to return ' + results.length + ' results...');
 			return results;
 		}
 	}
@@ -500,6 +551,20 @@ Collection.prototype.add = function(object, callback) {
 
 Collection.prototype.save = function(object, callback) {
 	var self = this;
+	console.dir('Collection.save----->');console.dir(object);
+	if ( object instanceof Array ) {
+		object = object.pop();
+		console.dir(object);console.dir('that was popped');
+	}
+	
+	if ( isEmptyObject( object ) ) {
+		var error = {error: 'save object was empty'};
+		if ( gotCallback(callback) ) {
+			callback(error,{});
+		} else {
+			return error;
+		}
+	}
 	if ( object.__ID === undefined ) {
 		return self.add(object, callback);
 	}
@@ -511,6 +576,7 @@ Collection.prototype.save = function(object, callback) {
 		self.db.cacheConnection.update( glo_ref, 'object', callback );
 	} else {
 		var result = self.db.cacheConnection.update( glo_ref, 'object' );
+		console.dir('save - update result: ');console.dir(result);
 		if ( result==0 ) {
 			//update index
 			var operation = self.index_operation.SAVE;
@@ -631,14 +697,19 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 //exports.Server = Server;
 
 
-function Db(databaseName, serverConfig, options) {
+function Db(databaseName, options) {
 	var self = this;
-	self.server = new Server(serverConfig, options);
+	self.server = new Server(options);
+	self.const_options = options;
 	self.databaseName = databaseName;
 	self.cacheConnection = {};
+	self.isRemoteConnection = false;
+	//self.remoteClient = {};
+	self.init_remote_connection = init_remote_connection;
 	self.init_collections = init_collections;
 	self.recordQueryStats = false;
 	self.cleanup = cleanup;
+	self.remote_client = {};
 	self.process_options = process_options;
 	self.process_options(options);
 	// wire up exit handler to make sure we clean up!
@@ -653,11 +724,35 @@ function Db(databaseName, serverConfig, options) {
 		//self.cleanup();
 	});
 	*/
+	function init_remote_connection(url) {
+		var options = get_options_from_url(url);
+		if ( self.const_options.resultMode !== undefined ) {
+			options.resultMode = self.const_options.resultMode;
+		}
+		self.remote_client = new globalsd_client.Client(options);	
+		//debugger;
+		self.remote_client.connect();
+		//callback({},{OK:1});
+	}
+	function get_options_from_url(c) {	
+		var opts = {};
+		var purl = url.parse(c);
+		console.log('get_options_from_url');console.dir(purl);
+		if ( purl.hostname !== undefined ) {
+			opts.host = purl.hostname;
+		} else {
+			opts.host = 'localhost';
+		} 
+		if ( purl.port !== undefined ) {
+			opts.port = purl.port;	
+		}
+		return opts;
+	}
 	function cleanup() {
 		debug('cleanup()');
 		debug('self.cacheConnection',self.cacheConnection);
 		if ( self.server !== undefined ) {
-			if ( self.server.cacheConnection !== undefined ) {
+			if ( !isEmptyObject(self.server.cacheConnection) ) {
 				debug('closing cacheConnection');
 				self.server.cacheConnection.close();
 			}
@@ -678,17 +773,34 @@ function Db(databaseName, serverConfig, options) {
 				self[name] = new Collection(name,self);
 			});
 		}
-		// once we connect - add a property for each global (aka Collection);
-		// this is NOT async on purpose, the connection
-		// isn't ready for use until it's initialized.
-	  var globals = self.cacheConnection.global_directory({});
-		globals.forEach(function(name) {  
-		  if ( self.name === undefined ) { 		// don't create again.
-				if ( Collection.non_system_global(name) ) {
-    			self[name] = new Collection(name, self);
-				} 
-			}
-  	});
+		var globals = [];
+		console.dir('self.isRemoteConnection='+self.isRemoteConnection);
+		if ( self.isRemoteConnection ) {
+			self.remote_client.global_directory( function(error,glos) {
+				if ( error ) { console.dir(error); }
+				glos.forEach(function(name) {  
+		  		if ( self.name === undefined ) { 		// don't create again.
+						if ( Collection.non_system_global(name) ) {
+    					self[name] = new Collection(name, self);
+						} 
+					}
+  			});
+				// some kind of FLAG here to say we got initialized,
+				// we can hold up pending operations until we get inti
+			});
+		} else {
+			// once we connect - add a property for each global (aka Collection);
+			// this is NOT async on purpose, the connection
+			// isn't ready for use until it's initialized.
+	  	globals = self.cacheConnection.global_directory({});
+			globals.forEach(function(name) {  
+		  	if ( self.name === undefined ) { 		// don't create again.
+					if ( Collection.non_system_global(name) ) {
+    				self[name] = new Collection(name, self);
+					} 
+				}
+  		});
+		}
 	}
 	/*
 	* Available options:
@@ -712,6 +824,17 @@ function Db(databaseName, serverConfig, options) {
 
 inherits(Db, EventEmitter);
 
+Db.prototype.global_directory = function() {
+	var globals = self.cacheConnection.global_directory({});
+	var good_globals = [];
+	globals.forEach(function(name) {  
+		if ( Collection.non_system_global(name) ) {
+			good_globals.push(name);
+		}
+	});
+	return good_globals;
+} 
+
 Db.prototype.createCollection = function(collectionName, options, callback) {
 	var self = this;
 	var gcb = gotCallback(callback);
@@ -727,9 +850,32 @@ Db.prototype.createCollection = function(collectionName, options, callback) {
 
 Db.prototype.close = function() {
 	var self = this;
-	if ( self.cacheConnection !== undefined ) {
+	console.dir('Db.close() self.isRemoteConnection='+self.isRemoteConnection);
+	console.dir('Db.close() self.cacheConnection');	console.dir(self.cacheConnection);
+	if ( !isEmptyObject(self.cacheConnection) ) {
+		try {
 		self.cacheConnection.close();
+		} catch(eeee) { console.dir(eeee); }
 	}
+	if ( self.isRemoteConnection ) {
+		try {
+		self.remote_client.close();
+		} catch(eee) { console.dir(eee); }
+	}
+}
+function isRemoteDB(connstr) {
+	// if the connstr looks to be a path (valid) on the local system,
+	// then we will assume this is a local connection
+	// otherwise, assume remote
+	try {
+		fs.statSync(connstr);
+		console.dir('isRemoteDB - false' + connstr);
+		return false;
+	} catch (e) {
+	}
+	console.dir('isRemoteDB - true' + connstr);	
+	return true;
+
 }
 Db.prototype.connect = function(options, callback) {
 	var self = this;
@@ -740,6 +886,15 @@ Db.prototype.connect = function(options, callback) {
 	// right now, url is just the path to the globalsdb mgr directory
 	// user,password and namespace don't seem to matter at all!
 	var pathToGlobalsMGR = self.databaseName;		// TO-DO check it's valid
+	if ( isRemoteDB( pathToGlobalsMGR ) ) {
+		self.isRemoteConnection = true;
+		self.init_remote_connection( pathToGlobalsMGR, callback );
+		self.init_collections(options);
+		if ( gotCallback(callback) ) {
+			callback({},{OK:1});
+		}
+		return;
+	}
 	var userName = "BugsBunny",password = "";
 	var namespace = "";
 	if ( options.namespace ) { namespace = options.namespace; }
@@ -762,3 +917,39 @@ Db.prototype.connect = function(options, callback) {
 }
 exports.Db = Db;
 
+/*
+DbOp (DatabaseOperation) objects model network requests for
+globalsjs
+{ op : find/update/save/remove/ensureIndex/reIndex
+	p1,.....pn : variable number of args, they should line up with whatever the op needs
+}
+*/
+
+var bson = require('mongodb').pure().BSON;
+var sys = require('sys');
+
+function DbOp(op,params,result) {
+	var self = this;
+	self.op = op || DbOp.UNDEFINED;
+	self.params = params || [];
+	self.result = result || {};
+	self.serialize = function() {
+		return bson.serialize( self );
+	}
+}
+DbOp.deserialize = function(b) {
+		 var c = bson.deserialize(b);
+		 console.log('deserialize');console.dir(c);
+		 return new DbOp(c.op, c.params, c.result);
+}
+// only export if unit test ???
+exports.Collection = Collection;
+exports.DbOp = DbOp;
+exports.deserializeDbOp = DbOp.deserialize;
+DbOp.UNDEFINED = 0;
+DbOp.FIND = 1;
+DbOp.UPDATE = 2;
+DbOp.REMOVE = 3;
+DbOp.ENSURE_INDEX = 4;
+DbOp.REINDEX = 5;
+DbOp.MAX_SUPPORTED_OP = 1;

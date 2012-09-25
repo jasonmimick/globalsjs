@@ -8,7 +8,7 @@ var util = require('util');
 var assert = require('assert');
 var cachedb = require('../../globalsjs');
 var path = "/Users/jasonmimick/dev/globalsdb/mgr";
-var LOAD_SIZE = 5000;
+var LOAD_SIZE = 1000;
 var db = new cachedb.Db(path,{},{recordQueryStats:true});
 var x = db.connect({collections: ['testAsync']});
 console.dir(x);

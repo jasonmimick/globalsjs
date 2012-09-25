@@ -1,11 +1,19 @@
 globalsjs - todo list
 
 x1. get unit tests working in new repo
-2. finish async version of find()
+x2. finish async version of find()
+/*  
 	--- it looks like one connection to cache/globalsdb cannot handle more than one
 			concurrent async call. SO, will need to refactor a bunch, and create new connections
 			for each call.
 		-- the sync calls can all share one connection
+*/
+	---> no - just cannot have multiple open async calls!!!
+  	for(var i=0; i<2; i++) {
+			db.foo.find({},function(e,r) { console.dir(r); }
+		}
+		will give sporadic results, usually, Segmentation Fault 11.
+
 3. work on deamon 
 	+ make a "dbcommand" object
 	+ BSON it across the wire
