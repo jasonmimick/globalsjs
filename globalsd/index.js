@@ -34,16 +34,16 @@ globalsd.prototype.start = 	function() {
 		var partial_object = ''; 	// in case of partial object at end of packet
 															// prepend to first object of next packet
 		self.server = net.createServer(function(c) { //'connection' listener
-  		console.log('server connected');
+  		//console.log('server connected');
   		c.on('end', function() {
-    		console.log('server - client disconnected');
+    		//console.log('server - client disconnected');
 				// any clean up of this sockets work??
   		});
 			c.on('data', function(data) { 
 				var object_buffer = [];
 			  var json = data.toString('utf8',0);	
 				var objects = json.split(END_OF_MESSAGE);
-				console.log('server data event');console.dir(objects);
+				//console.log('server data event');console.dir(objects);
 				if ( partial_object.length > 0 ) {
 					objects[0]=partial_object + objects[0];
 				}
@@ -57,35 +57,39 @@ globalsd.prototype.start = 	function() {
 																				// be bug with node 0.6.x I have to use
 																				// TODO - refactor to use events so not blocking
 						reqH.onRequest(o,c);
-						console.log('why another request???? ---------################');
-						console.dir(objects);
-						console.log('i='+i);
+						//console.log('why another request???? ---------################');
+						//console.dir(objects);
+						//console.log('i='+i);
 						
-						console.log('################');
+						//console.log('################');
 						//console.dir(c);
 						partial_object = '';		
 					} catch(Exception) {
 						// if we catch, then we have a partial packet,
 						partial_object = objects[i]; 
-						console.log('i='+i+'   '+objects[i]);
-						console.dir(Exception);
-						console.trace();
+						//console.log('i='+i+'   '+objects[i]);
+						//console.dir(Exception);
+						//console.trace();
 					}
 				}
 			});
   		//c.pipe(c);c.write('\r\n');
 		});
 		process.on('SIGINT', function() {
-			console.log('Caught SIGINT - cleaning up');
-			if ( db !== undefined ) { db.close(); console.log('db closed');}
+			//console.log('Caught SIGINT - cleaning up');
+			if ( db !== undefined ) { 
+				db.close(); 
+				//console.log('db closed');
+			}
 			self.server.close();
 		});
 		self.server.on('close', function() {
-			console.log('server close event');
+			//console.log('server close event');
 			
 		});
 		self.server.listen(self.opts.port, function() { //'listening' listener
-			console.log('globalsd network deamon started:' + (new Date).toString() );
+			console.log('a node.js powered network deamon for GlobalsDB');
+			console.log('started:' + (new Date).toString() );
 			console.log('listening for connections on port:' + self.opts.port);
 			console.log('connected to db: '+ db.cacheConnection.version());	
 			console.log('globalsdb home='+GLOBALS_PATH);
@@ -98,10 +102,9 @@ function gdb_request_handler(globals_deamon) {
 	self.server = globals_deamon;
 	//self.server.on('request', function(req,socket) {
 	self.onRequest = function(req,socket) {
-		// remove myself from listening for events..., i got mine
 		//self.server.removeListener('request',self);
-		console.dir('request_handler got request');
-		console.dir(req);
+		//console.dir('request_handler got request');
+		//console.dir(req);
 		//console.trace();
 		// validate req
 		if (!valid(req.data) ) { bad_request(socket); return;}
@@ -109,10 +112,15 @@ function gdb_request_handler(globals_deamon) {
 		var operation = '';
 		var result;
 		if ( !collection ) {
+			//console.dir('~~~~~~~~~~~~');
 			operation = cachedb.Db.prototype[req.data.op];
+			//console.dir(operation);
 			result = operation.call(db,req.data.params);
+			//console.dir('#######################');console.dir(result);
 		} else {
+			//console.dir('~~~~~~~~~~~~');
 			operation = cachedb.Collection.prototype[req.data.op];
+			//console.dir('~~~~~~~~~~~~');
 			if ( operation === undefined ) {
 				bad_request(socket);
 				console.log('400');console.log(req);
@@ -121,11 +129,11 @@ function gdb_request_handler(globals_deamon) {
 	
 			result = operation.call(db[collection],req.data.params);
 		}
-		//console.log('operation=');console.dir(operation);
+		//console.log('---->operation=');console.dir(operation.toString());
 		//console.log('db['+collection+']');console.dir(db[collection]);
 	
-		console.log(result);
-		console.log('those were the results');
+		//console.log(result);
+		//console.log('those were the results');
 		// send header packet - with meta data about results.
 		var ackProp = '~*-globalsdb-*~';
 		var header = {};
@@ -142,10 +150,10 @@ function gdb_request_handler(globals_deamon) {
 			header[ackProp]['result_count']=1;
 			socket.write(JSON.stringify(header));
 			socket.write('\n');
-			socket.write(JSON.stringify( { result : result } ) );
+			socket.write(JSON.stringify( result  ) );
 			socket.write('\n');
 		}
-		console.log('###########');
+		//console.log('###########');
 		// DO I WANT TO END HERE???
 		//socket.end();
 		//socket.write('\n');

@@ -137,8 +137,8 @@ function Collection(collectionName, dbInstance) {
 		debug('spin_find_index() glo_ref',glo_ref);
 		gdb.order(glo_ref, function(error,resultXX) {
 			if ( error ) { 
-				console.dir(error);console.dir(resultXX);
-				console.dir(glo_ref);
+				//console.dir(error);console.dir(resultXX);
+				//console.dir(glo_ref);
 				callback(error,{});
 				return;
 			}
@@ -167,7 +167,7 @@ function Collection(collectionName, dbInstance) {
 	}
 	function load_indexes() {
 		if ( self.db.isRemoteConnection ) {
-			console.log('load_indexes() - connection was remote, nothing to do');
+			debug('load_indexes() - connection was remote, nothing to do');
 			return;
 		}
 		var index = '';
@@ -300,6 +300,7 @@ function Collection(collectionName, dbInstance) {
 		}
 		var glo_ref = {};
 		glo_ref= { global : self.name, subscripts : [object.__ID] };
+		debug('fetch_glo_ref_from_object');debug(glo_ref);
 		return glo_ref;
 	}
 
@@ -414,8 +415,8 @@ Collection.prototype.find = function(query, callback) {
 	if ( self.db.recordQueryStats ) {
 		stat_ref = self.start_query_stats(query);
 	}
-	console.log('Collection.prototype.find --> query=');console.dir(query);
-	console.log(query instanceof Array); 
+	//console.log('Collection.prototype.find --> query=');console.dir(query);
+	//console.log(query instanceof Array); 
 	if ( query instanceof Array ) {
 		query = query.pop();
 	}
@@ -426,12 +427,13 @@ Collection.prototype.find = function(query, callback) {
 		req.collection = self.name;
 		req.params = [];
 		req.params.push(query);
-		console.dir(req);		
+		debug(req);		
 		if ( gotCallback(callback) ) {
 			self.db.remote_client.send(req,callback);
 			return;
-		} else 
-		return self.db.remote_client.send(req);		
+		} else { 
+			return self.db.remote_client.send(req);		
+		}
 	}
 	//debug("Collection - find ");
  	var gloRef = {global: self.name, subscripts: []};
@@ -497,19 +499,17 @@ Collection.prototype.find = function(query, callback) {
 			results.push(obj.object);
 		});
 		if ( !isEmptyObject(query) ) {
-			console.log('results.length='+results.length);
+			debug('results.length='+results.length);
 			var rr = self.filter_results(query, results);		
 			if ( stat_ref !== undefined ) {
 				self.stop_query_stats(stat_ref,results.length);
 			}
-			console.log('rr !!!!!!!!~~~~~~~!!!!!!!!!');
-			console.dir(rr);
 			return rr;
 		} else {
 			if ( stat_ref !== undefined ) {
 				self.stop_query_stats(stat_ref,results.length);
 			}
-			console.log('about to return ' + results.length + ' results...');
+			debug('about to return ' + results.length + ' results...');
 			return results;
 		}
 	}
@@ -517,6 +517,22 @@ Collection.prototype.find = function(query, callback) {
  
 Collection.prototype.add = function(object, callback) {
 	var self = this;
+	if ( self.db.isRemoteConnection ) {
+		var req = {};
+		req.op = 'add';
+		req.collection = self.name;
+		req.params = [];
+		req.params.push(object);
+		debug(req);		
+		if ( gotCallback(callback) ) {
+			self.db.remote_client.send(req,callback);
+			return;
+		} else { 
+			return self.db.remote_client.send(req);		
+		}
+	}
+
+
 	// we're going to force a sync operation
 	// on getting the next primary key, since the add should
 	// fail if we can't	
@@ -543,18 +559,16 @@ Collection.prototype.add = function(object, callback) {
 	if ( gotCallback(callback) ) {
 		self.db.cacheConnection.update(updateArgs,'object',updateCB);
 	} else {
-		console.log('-----');
-		console.dir(updateArgs);
 		return self.db.cacheConnection.update(updateArgs,'object');
 	}
 }
 
 Collection.prototype.save = function(object, callback) {
 	var self = this;
-	console.dir('Collection.save----->');console.dir(object);
+	debug('Collection.save----->');console.dir(object);
 	if ( object instanceof Array ) {
 		object = object.pop();
-		console.dir(object);console.dir('that was popped');
+		//console.dir(object);console.dir('that was popped');
 	}
 	
 	if ( isEmptyObject( object ) ) {
@@ -568,6 +582,21 @@ Collection.prototype.save = function(object, callback) {
 	if ( object.__ID === undefined ) {
 		return self.add(object, callback);
 	}
+	
+	if ( self.db.isRemoteConnection ) {
+		var req = {};
+		req.op = 'save';
+		req.collection = self.name;
+		req.params = [];
+		req.params.push(object);
+		debug(req);		
+		if ( gotCallback(callback) ) {
+			self.db.remote_client.send(req,callback);
+			return;
+		} else { 
+			return self.db.remote_client.send(req);		
+		}
+	}
 	var glo_ref = {};
 	glo_ref.node = { global : self.name, subscripts : [object.__ID] };
 	glo_ref.object = object;
@@ -576,7 +605,7 @@ Collection.prototype.save = function(object, callback) {
 		self.db.cacheConnection.update( glo_ref, 'object', callback );
 	} else {
 		var result = self.db.cacheConnection.update( glo_ref, 'object' );
-		console.dir('save - update result: ');console.dir(result);
+		//console.dir('save - update result: ');console.dir(result);
 		if ( result==0 ) {
 			//update index
 			var operation = self.index_operation.SAVE;
@@ -590,9 +619,29 @@ Collection.prototype.save = function(object, callback) {
 
 Collection.prototype.remove = function(object, callback) {
 	var self = this;
-  var	glo_ref = self.fetch_glo_ref_from_object(object);
-	//debug(glo_ref);
+	if ( object instanceof Array ) {
+		object = object.pop();
+		//console.dir(object);console.dir('that was popped');
+	}
 
+	if ( self.db.isRemoteConnection ) {
+		console.log('~~~~~ Collection.remove --->');console.dir(object);
+		var req = {};
+		req.op = 'remove';
+		req.collection = self.name;
+		req.params = [];
+		req.params.push(object);
+		debug(req);		
+		if ( gotCallback(callback) ) {
+			self.db.remote_client.send(req,callback);
+			return;
+		} else { 
+			return self.db.remote_client.send(req);		
+		}
+	}
+	debug('Collection.remove()  - object->');debug(object);
+  var	glo_ref = self.fetch_glo_ref_from_object(object);
+	debug(glo_ref);
 	if ( gotCallback(callback) ) {
 		// wrap callback calls.
 		// first, kill data node, then 5gdb(system), then 1gdb(index), then
@@ -737,7 +786,7 @@ function Db(databaseName, options) {
 	function get_options_from_url(c) {	
 		var opts = {};
 		var purl = url.parse(c);
-		console.log('get_options_from_url');console.dir(purl);
+		//console.log('get_options_from_url');console.dir(purl);
 		if ( purl.hostname !== undefined ) {
 			opts.host = purl.hostname;
 		} else {
@@ -765,28 +814,30 @@ function Db(databaseName, options) {
 		//console.dir(self.options);
 		// load up the run-time specified collections
 		if ( options.collections !== undefined ) {
-			console.log('@@@@@@@@@@@@@@@@@@@@@@');
-			console.dir(options);
-			console.trace();
+			//console.log('@@@@@@@@@@@@@@@@@@@@@@');
+			//console.dir(options);
+			//console.trace();
 			var rtcols = options.collections;
 			rtcols.forEach(function(name) {
 				self[name] = new Collection(name,self);
 			});
 		}
 		var globals = [];
-		console.dir('self.isRemoteConnection='+self.isRemoteConnection);
+		//console.dir('self.isRemoteConnection='+self.isRemoteConnection);
 		if ( self.isRemoteConnection ) {
-			self.remote_client.global_directory( function(error,glos) {
-				if ( error ) { console.dir(error); }
-				glos.forEach(function(name) {  
-		  		if ( self.name === undefined ) { 		// don't create again.
-						if ( Collection.non_system_global(name) ) {
-    					self[name] = new Collection(name, self);
-						} 
-					}
-  			});
-				// some kind of FLAG here to say we got initialized,
-				// we can hold up pending operations until we get inti
+			self.remote_client.global_directory(function(e,glos) {
+			//console.log('remote_client global_directory callback');
+			//console.dir(glos);
+			var keys = Object.keys(glos);
+			for(var i=0; i<keys.length; i++) {
+				var key = keys[i];  
+				var name = glos[key];
+		  	if ( self.name === undefined ) { 		// don't create again.
+					if ( Collection.non_system_global(name) ) {
+    				self[name] = new Collection(name, self);
+					} 
+				}
+			}
 			});
 		} else {
 			// once we connect - add a property for each global (aka Collection);
@@ -825,11 +876,14 @@ function Db(databaseName, options) {
 inherits(Db, EventEmitter);
 
 Db.prototype.global_directory = function() {
+	var self = this;
 	var globals = self.cacheConnection.global_directory({});
-	var good_globals = [];
+	//console.log('Db.global_directory');console.dir(globals);
+	var good_globals = {};
+	var i=0;
 	globals.forEach(function(name) {  
 		if ( Collection.non_system_global(name) ) {
-			good_globals.push(name);
+			good_globals[++i]=name;
 		}
 	});
 	return good_globals;
@@ -850,8 +904,8 @@ Db.prototype.createCollection = function(collectionName, options, callback) {
 
 Db.prototype.close = function() {
 	var self = this;
-	console.dir('Db.close() self.isRemoteConnection='+self.isRemoteConnection);
-	console.dir('Db.close() self.cacheConnection');	console.dir(self.cacheConnection);
+	//console.dir('Db.close() self.isRemoteConnection='+self.isRemoteConnection);
+	//console.dir('Db.close() self.cacheConnection');	console.dir(self.cacheConnection);
 	if ( !isEmptyObject(self.cacheConnection) ) {
 		try {
 		self.cacheConnection.close();
@@ -869,11 +923,11 @@ function isRemoteDB(connstr) {
 	// otherwise, assume remote
 	try {
 		fs.statSync(connstr);
-		console.dir('isRemoteDB - false' + connstr);
+		//console.dir('isRemoteDB - false' + connstr);
 		return false;
 	} catch (e) {
 	}
-	console.dir('isRemoteDB - true' + connstr);	
+	//console.dir('isRemoteDB - true' + connstr);	
 	return true;
 
 }
@@ -917,39 +971,6 @@ Db.prototype.connect = function(options, callback) {
 }
 exports.Db = Db;
 
-/*
-DbOp (DatabaseOperation) objects model network requests for
-globalsjs
-{ op : find/update/save/remove/ensureIndex/reIndex
-	p1,.....pn : variable number of args, they should line up with whatever the op needs
-}
-*/
-
-var bson = require('mongodb').pure().BSON;
-var sys = require('sys');
-
-function DbOp(op,params,result) {
-	var self = this;
-	self.op = op || DbOp.UNDEFINED;
-	self.params = params || [];
-	self.result = result || {};
-	self.serialize = function() {
-		return bson.serialize( self );
-	}
-}
-DbOp.deserialize = function(b) {
-		 var c = bson.deserialize(b);
-		 console.log('deserialize');console.dir(c);
-		 return new DbOp(c.op, c.params, c.result);
-}
 // only export if unit test ???
 exports.Collection = Collection;
-exports.DbOp = DbOp;
-exports.deserializeDbOp = DbOp.deserialize;
-DbOp.UNDEFINED = 0;
-DbOp.FIND = 1;
-DbOp.UPDATE = 2;
-DbOp.REMOVE = 3;
-DbOp.ENSURE_INDEX = 4;
-DbOp.REINDEX = 5;
-DbOp.MAX_SUPPORTED_OP = 1;
+

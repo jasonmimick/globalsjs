@@ -290,11 +290,17 @@ function format_glb_output(glo_ref) {
 	
 	return out;
 }
+var greeting = '\
+  ______ ______  ______  _______ _______ _______ _______ _____  _____  __   _\n\
+ |  ____ |     \\ |_____] |______ |______ |______ |______   |   |     | | \\  |\n\
+ |_____| |_____/ |_____] ______| |______ ______| ______| __|__ |_____| |  \\_|';
+                                                                         
 (function() {
-	console.log('gdbsession');
-	var c = open_connection();
-	console.log( c.about() );
+	console.log(greeting);
+	console.log('a node.js powered REPL for GlobalsDB');
 	try {
+		var c = open_connection();
+		console.log( c.about() );
 		c.close();
 	} catch(e) {
 		var m = 'Unable to connect to globalsdb in ' + globalsdb_home;

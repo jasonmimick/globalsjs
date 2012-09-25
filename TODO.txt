@@ -21,3 +21,5 @@ x2. finish async version of find()
 	+ refactor calls from client (globalsjs.Db.Collection) to use network 
 	+ URL scheme, do what mongojs does
 
+basic deamon and client is done.
+need to add support for other operations, save, remove, etc...

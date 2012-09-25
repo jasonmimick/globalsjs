@@ -32,8 +32,16 @@ function Client(options) {
 		return id++;
 	}
 	self.client = {};
-	self.datacb = function() {};
-	self.default_datacb = function(e,d) { console.log('WARNING: default data callback');console.dir(d); }
+	//dataCallbacks maps server requests to callbacks
+	//each request gets wrapped in a header with an id
+	//when data is sent back, the header is parsed and 
+	//data is sent back to the correct callback according 
+	//to the msg id in the header.
+	self.dataCallbacks = {};	// msg.id => callback
+	self.default_datacb = function(e,d) { 
+		console.log('WARNING: default data callback');
+		console.dir(d); 
+	}
 	self.isACKObject = function(obj) {
 		if ( obj[ackProp] !== undefined ) { return true; }
 		return false;
@@ -50,14 +58,16 @@ Client.prototype.connect = function(options) {
   			//console.log('client connected');
 	});
 	self.client.on('error', function (error) {
-		self.datacb(error);
+		//self.datacb(error);
+		console.error(error);
 	});
 	var partial_object = '';
 	var batch_result_counter = 0;
 	var batch_result_size = 0;
+	var current_result_msg_id = '';
 	var batch = [];
 	self.client.on('data', function(data) {
-		//console.dir('data event - data='+data);
+		console.dir('data event - data='+data);
  		var objects = data.toString().split('\n');
 		if ( partial_object.length>0 ) {
 			objects[0] = partial_object + objects[0];
@@ -75,17 +85,24 @@ Client.prototype.connect = function(options) {
 				if ( self.isACKObject(o) ) {
 					batch_result_size = o[ackProp]['result_count'];
 					batch_result_counter = 0;		// reset - got new ack
+					current_result_msg_id = o[ackProp]['id'];
+					//console.dir('------------>current__result_msg_id='+current_result_msg_id);
 					batch = [];
 				} else {
 					batch_result_counter++;
 					if ( self.resultMode == self.resultMode_stream ) {	
 						//console.log('+++++++++++++++++++++++++++++++++++++++++++++++');
-						self.datacb({},o);		// NOTE: we stream back each object as we get it
+						//self.datacb({},o);		// NOTE: we stream back each object as we get it
+						// lookup the callback.
+						self.dataCallbacks[current_result_msg_id]({},o);
 					} else { // batch mode
+						batch.push(o);
 						if ( batch_result_counter == batch_result_size ) {
-							self.datacb({},batch);
+							//console.log('calling datacb' + self.datacb.toString());
+							self.dataCallbacks[current_result_msg_id]({},batch);
+							//self.datacb({},batch);
 						} else {
-							batch.push(o);
+							//batch.push(o);
 						}
 					}
 				}
@@ -112,12 +129,17 @@ Client.prototype.close = function() {
 Client.prototype.send = function(data,callback) {
 	var self = this;
 	var msg = {};
-	self.datacb = self.default_datacb;
-	if ( callback !== undefined ) {
-		self.datacb = callback;
+	//self.datacb = self.default_datacb;
+	//console.log('client.send ---' + callback.toString());
+	if ( callback === undefined ) {
+		//self.datacb = callback;
+		callback = self.default_datacb;		// how to make sync?
 	}
 	msg.header = { id : self.get_id(), name : self.name, ts : Date.now() };
 	msg.data = data;
+	self.dataCallbacks[msg.header.id]=callback;
+	//console.log('%%%%%%%%%%%%%%%%%%%%%%%');
+	//console.dir(self.dataCallbacks);
 	var json = JSON.stringify(msg);
 	self.client.write( json );
 	self.client.write(END_OF_MESSAGE);
@@ -127,16 +149,14 @@ Client.prototype.send = function(data,callback) {
 Client.prototype.global_directory = function(callback) {
 	var self = this;
 	var request = {};
-	request.operation = "global_directory";
-	//console.dir('about to send request: ');
+	request.op = "global_directory";
+	request.params = [];
+	//console.dir('client global_dir: ');
+	//console.trace();
 	//console.dir(request);
 	self.send(request, function (e,r) {
-		callback(e,r);
+		console.dir('client global_dir callback');console.dir(r);
+		callback(e,r.pop());
 	});
 }	
 exports.Client = Client;
-
-
-
-//dbreq.params = [ { food : 'granola' } ];
-//test_client.send( dbreq );
