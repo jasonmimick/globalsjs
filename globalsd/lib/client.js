@@ -10,7 +10,7 @@ function Client(options) {
 	self.resultMode_stream = 'stream'
 	self.resultMode = self.resultMode_batch; // default is to batch...
 	if ( typeof options === 'object' ) {
-		self.port = options.port || 111105;
+		self.port = options.port || 11115;
 		self.host = options.host || 'localhost';
 		self.name = options.name || require('os').hostname() + ':' + process.pid;
 		if ( options.resultMode ) {
@@ -84,9 +84,12 @@ Client.prototype.connect = function(options) {
 				//console.log('~~~~~~~~~~~~~~~~~~~');
 				if ( self.isACKObject(o) ) {
 					batch_result_size = o[ackProp]['result_count'];
-					batch_result_counter = 0;		// reset - got new ack
+								batch_result_counter = 0;		// reset - got new ack
 					current_result_msg_id = o[ackProp]['id'];
 					//console.dir('------------>current__result_msg_id='+current_result_msg_id);
+					if ( batch_result_size === 0 ) {
+						self.dataCallbacks[current_result_msg_id]({count:0},[]);
+					}
 					batch = [];
 				} else {
 					batch_result_counter++;
@@ -104,6 +107,7 @@ Client.prototype.connect = function(options) {
 						} else {
 							//batch.push(o);
 						}
+						//batch_result_counter++;
 					}
 				}
 				partial_object = '';

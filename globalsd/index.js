@@ -5,29 +5,121 @@ var events = require('events');
 //var bson = require('mongodb').pure().BSON;
 var cachedb = require('../../globalsjs');
 // TODO read from command line
-var GLOBALS_PATH = "/Users/jasonmimick/dev/globalsdb/mgr";
-var db = new cachedb.Db(GLOBALS_PATH);
+var deamon_opts = {};
+
+deamon_opts.GLOBALS_PATH = "/Users/jasonmimick/dev/globalsdb/mgr";
+deamon_opts.port = 11115;	// default port
+deamon_opts.admin_web_port = 11125;
+deamon_opts.enable_admin_web_console = false;
+for(var i=2; i<process.argv.length; i++) {
+	if ( process.argv[i]=='--dbpath' ) {
+		deamon_opts.GLOBALS_PATH = process.argv[i+1];
+	}
+	if (process.argv[i]=='--port' ) {
+		if ( !isNan( parseInt( process.argv[i+1] ) ) ) {
+			deamon_opts.port = parseInt(process.argv[i+1]);
+		}
+	}
+	if ( process.argv[i]=='--rest' ) {
+		deamon_opts.enable_admin_web_console = true;
+		var i = parseInt( process.argv[i+1]);
+		if ( !isNaN(i) ) {
+			deamon_opts.admin_web_port = i;
+		}
+	}
+}	
+console.log('deamon_opts');console.dir(deamon_opts);
+var fs = require('fs');
+var http = require('http');
+// check dbpath is good-
+(function (){
+	var path = require('path');
+	var cache_binary = path.join(deamon_opts.GLOBALS_PATH,'..','bin','cache');
+	try {
+		fs.statSync(cache_binary);
+	} catch (exception) {
+		console.error(deamon_opts.GLOBALS_PATH+' does not appear to be a valid installation of GlobalsDB');
+		process.exit(1);
+	}
+})();
+
+var db = new cachedb.Db(deamon_opts.GLOBALS_PATH);
 // optionally specify new run-time collections here when you start the deamon?
 var x = db.connect();
 var END_OF_MESSAGE = '\n';
+var HTTP_HEADERS = {};
+HTTP_HEADERS['ok-text'] = { status : 200, content_type : 'text/plain' };
 function globalsd(options) {
 	var self = this;
-	var server;
-	self.parse_options = parse_options;
-	self.opts = parse_options( options );
-	// private functions
-	function parse_options(o) {
-		var oo = {};
-		if ( o.port !== undefined ) {
-			oo.port = o.port;	// TODO check good number!
-		}
-		return oo;
-	}
+	self.opts = options;
 	events.EventEmitter.call(this);
+	self.start_admin_web_console = function() {
+		self.admin_server = http.createServer( function(req,res) {
+			var response = self.handle_web_req(req);
+			res.writeHead(response.header.status,response.header.content_type);
+			res.end(response.body);
+		}).listen(self.opts.admin_web_port, 'localhost');
+		console.log('admin web console waiting for connections on port '+self.opts.admin_web_port);
+	}
+	self.handle_web_req = function(req) {
+		// if this is a req for some special command e.g. /listCollections
+		// forward on, else, dump server info
+		
+		var res = {};
+		res.header = HTTP_HEADERS['ok-text'];
+		var html = "<html><head><title>globalds</title>";
+		html += '<style type="text/css" media="screen">\n\
+body { font-family: helvetica, arial, san-serif }\n\
+table { border-collapse:collapse; border-color:#999; margin-top:.5em }\n\
+th { background-color:#bbb; color:#000 }\n\
+td,th { padding:.25em }\n\
+</style>\n';
+		html += '</head><body>';
+		html += '<h2>globalsd '+	require('os').hostname() + ':' + process.pid + '</h2>';
+		html += '<pre>'+db.cacheConnection.version()+'</pre>';
+		html += '<hr/>';
+		html += '<h3>collections</h3><pre>'+self.collections_html()+'</pre>';
+		html += '<hr/>';
+		html += self.client_html_table();
+		html += '</body>';
+		res.body = html;
+		return res;
+	} 
+	self.collections_html = function() {
+		//return 'what the heck';
+		//return JSON.stringify(db.collection_names,null,'\t');
+		return JSON.stringify(db.collection_names);
+	}
+	self.client_html_table = function() {
+		var td = function(c) { return '<td>'+c+'</td>'; }
+		var tbl = '<table>\n\
+<tr><th>client</th><th>message id</th><th>timestamp</th>\n\
+<th>operation</th><th>collection</th><th>parameters</th></tr>\n';
+		var client_names = Object.keys(self.clients);
+		for(var i=0; i<client_names.length; i++) {
+			var client = client_names[i];
+			var rs = self.clients[client];
+			for(var j=0; j<rs.length; j++) {
+				var r = JSON.parse(rs[j]);
+				console.dir(r);
+				console.dir(r.data);
+				tbl += '<tr>'+td(client);
+				tbl += td(r.header.id);
+				tbl += td(r.header.ts);
+				tbl += td(r.data.op);
+				tbl += td(r.data.collection);
+				tbl += td('<pre>'+JSON.stringify(r.data.params,null,'\t')+'</pre>');
+				tbl += '</tr>';			
+			}
+		}
+		tbl += '</table>';
+		return tbl;
+	}
 }
 util.inherits(globalsd,events.EventEmitter);
 globalsd.prototype.start = 	function() {
 		var self = this;
+		self.clients = [];
 		var net = require('net');
 		var buffer = '', startBraceCount = 0, endBraceCount = 0;
 		var partial_object = ''; 	// in case of partial object at end of packet
@@ -35,8 +127,11 @@ globalsd.prototype.start = 	function() {
 		self.server = net.createServer(function(c) { //'connection' listener
   		//console.log('server connected');
   		c.on('end', function() {
-    		//console.log('server - client disconnected');
+    		console.log('server - client disconnected');
 				// any clean up of this sockets work??
+				
+				//delete self.clients[c['-~*globalsd-client*~-']];
+				console.dir(util.inspect(self.clients,5));
   		});
 			c.on('data', function(data) { 
 				var object_buffer = [];
@@ -50,6 +145,7 @@ globalsd.prototype.start = 	function() {
 					if ( objects[i].length <= 0 ) { continue; }
 					try {
 						var o = JSON.parse(objects[i]);
+					
 						var reqH = new gdb_request_handler(self);
 						//self.emit('request',o,c); // was getting funky results
 																				// with the event emitter, might
@@ -67,23 +163,32 @@ globalsd.prototype.start = 	function() {
 						// if we catch, then we have a partial packet,
 						partial_object = objects[i]; 
 						//console.log('i='+i+'   '+objects[i]);
-						//console.dir(Exception);
-						//console.trace();
+						console.dir(Exception);
+						console.trace();
 					}
 				}
 			});
   		//c.pipe(c);c.write('\r\n');
 		});
 		process.on('SIGINT', function() {
-			//console.log('Caught SIGINT - cleaning up');
-			if ( db !== undefined ) { 
-				db.close(); 
-				//console.log('db closed');
+			console.log('Caught SIGINT - cleaning up');
+			try {
+				if ( db !== undefined ) { 
+					db.close(); 
+					console.log('db closed');
+				}
+				self.server.close();
+				if ( self.opts.enable_admin_web_console ) {
+					self.admin_server.close();
+					console.log('closed admin web console');
+				}
+			} catch(Exp) { 
+				console.dir('SIGINT exception');
+				console.trace();console.dir(Exp);console.trace(); 
 			}
-			self.server.close();
 		});
 		self.server.on('close', function() {
-			//console.log('server close event');
+			console.log('server close event');
 			
 		});
 		self.server.listen(self.opts.port, function() { //'listening' listener
@@ -91,8 +196,12 @@ globalsd.prototype.start = 	function() {
 			console.log('started:' + (new Date).toString() );
 			console.log('listening for connections on port:' + self.opts.port);
 			console.log('connected to db: '+ db.cacheConnection.version());	
-			console.log('globalsdb home='+GLOBALS_PATH);
+			console.log('globalsdb home='+deamon_opts.GLOBALS_PATH);
+			if ( self.opts.enable_admin_web_console ) {
+				self.start_admin_web_console();
+			}
 		});
+		
 		
 }
 var INVALID_REQUEST_RESPONSE = '400\n';
@@ -102,11 +211,26 @@ function gdb_request_handler(globals_deamon) {
 	//self.server.on('request', function(req,socket) {
 	self.onRequest = function(req,socket) {
 		//self.server.removeListener('request',self);
-		//console.dir('request_handler got request');
-		//console.dir(req);
+		console.dir('request_handler got request');
+		console.dir(req);
+
+
 		//console.trace();
 		// validate req
 		if (!valid(req.data) ) { bad_request(socket); return;}
+		if ( req.header !== undefined ) {
+			if ( req.header.name !== undefined ) {
+				if ( globals_deamon.clients[req.header.name]===undefined ) {
+					globals_deamon.clients[req.header.name] = [];
+				}	
+				globals_deamon.clients[req.header.name].push(JSON.stringify(req));
+				socket['-~*globalsd-client*~-']=req.header.name;
+			}
+		}
+
+
+
+
 		var collection = req.data.collection;
 		var operation = '';
 		var result;
@@ -115,6 +239,7 @@ function gdb_request_handler(globals_deamon) {
 			operation = cachedb.Db.prototype[req.data.op];
 			//console.dir(operation);
 			result = operation.call(db,req.data.params);
+			console.dir('~~~~~~~~~');console.dir(req.data.params);
 			//console.dir('#######################');console.dir(result);
 		} else {
 			//console.dir('~~~~~~~~~~~~');
@@ -127,6 +252,7 @@ function gdb_request_handler(globals_deamon) {
 			};
 	
 			result = operation.call(db[collection],req.data.params);
+			console.dir('~~~~~~~~~');console.dir(req.data.params);
 		}
 		//console.log('---->operation=');console.dir(operation.toString());
 		//console.log('db['+collection+']');console.dir(db[collection]);
@@ -178,14 +304,19 @@ var greeting = '\
  |  ____ |      |     | |_____] |_____| |      |______ |     \\\n\
  |_____| |_____ |_____| |_____] |     | |_____ ______| |_____/';
                                                               
-console.log(greeting);
-var port = 111105;	// default port
+console.log('\033[92m'+greeting+'\033[0m');
 if (typeof argvs[0] =='string' ) {
 	var i = parseInt(argvs[0]);
 	if ( typeof i == 'number' ) {
 		port = i;
 	}
 }
+	process.on('uncaughtException', function() {
+		debug('caught uncaughtException',arguments);
+		console.trace();
+		//self.cleanup();
+	});
 
-var gd = new globalsd({'port':port});
+
+var gd = new globalsd(deamon_opts);
 gd.start();

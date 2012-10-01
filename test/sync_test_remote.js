@@ -5,13 +5,16 @@
 */ 
 var util = require('util');
 var cachedb = require('../../globalsjs');
-var path = "globalsdb://localhost";
+var path = "globalsdb://localhost:11115";
 //var db = new cachedb.Db(path, { resultMode : 'stream' } );
 var db = new cachedb.Db(path, { resultMode : 'batch' } );
 var x = db.connect({collections: ['testsync']}, function(e,r) {
 	// read back
 	console.dir(db);
 	db.testsync.find({food:'granola'},function(err,res) {
+		if ( res.length === 0 ) {
+			console.log('empty results');process.exit(0);
+		}
 		console.dir(res);
 		console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
 		// don't call close here, the api will stream each object back one by one.
@@ -28,7 +31,9 @@ var x = db.connect({collections: ['testsync']}, function(e,r) {
 			var o = { __ID: 51, name : 'foo', age: 22};
 			db.testsync.remove(o,function(e2,r2) {
 				console.dir(r2);
+				debugger;
 				db.close();
+
 			});
 		});
 	});

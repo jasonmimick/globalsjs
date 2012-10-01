@@ -149,6 +149,7 @@ function Collection(collectionName, dbInstance) {
 				//try {
 				gdb.close();
 				//} catch(exp) { console.dir(exp); }
+			console.dir('leaving SIGIN');
 			} 	
 		});
 	}
@@ -538,7 +539,6 @@ Collection.prototype.add = function(object, callback) {
 
 Collection.prototype.save = function(object, callback) {
 	var self = this;
-	debug('Collection.save----->');console.dir(object);
 	if ( object instanceof Array ) {
 		object = object.pop();
 		//console.dir(object);console.dir('that was popped');
@@ -692,6 +692,7 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 	var self = this;
 	//debug('cachedb - Server connect');
 	var cacheConnection = new cache.Cache(); 
+	/*
 	process.on('exit', function() {
 		debug('Server.connect - process exit event hander');
 		debug(cacheConnection);
@@ -699,8 +700,11 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 			cacheConnection.close();
 		} catch(Exception) {
 				debug(Exception);
+			console.dir(Exception);
+			console.log('121212');
 		}
 	});		
+	*/
 	if ( gotCallback(callback) ) {
 		cacheConnection.open( options.___connection, function(error, result) {
 			dbInstance.cacheConnection = cacheConnection;
@@ -724,6 +728,8 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 
 function Db(databaseName, options) {
 	var self = this;
+	self.collection_names = [];
+	//console.log('------------ ****** ------ ');console.dir(self.collection_names);
 	self.server = new Server(options);
 	self.const_options = options;
 	self.databaseName = databaseName;
@@ -741,13 +747,14 @@ function Db(databaseName, options) {
 		debug('caught exit');
 		self.cleanup();
 	});
-	/*
+	
 	process.on('uncaughtException', function() {
-		debug('caught uncaughtException',arguments);
+		//debug('caught uncaughtException',arguments);
+		console.log('caught uncaughtException');console.dir(arguments);
 		console.trace();
-		//self.cleanup();
+		self.cleanup();
 	});
-	*/
+
 	function init_remote_connection(url) {
 		var options = get_options_from_url(url);
 		if ( self.const_options.resultMode !== undefined ) {
@@ -795,6 +802,9 @@ function Db(databaseName, options) {
 			var rtcols = options.collections;
 			rtcols.forEach(function(name) {
 				self[name] = new Collection(name,self);
+				try{
+					self.collection_names.push(name);
+				} catch(erere) { console.log(erere);console.trace(); }
 			});
 		}
 		var globals = [];
@@ -810,6 +820,9 @@ function Db(databaseName, options) {
 		  	if ( self.name === undefined ) { 		// don't create again.
 					if ( Collection.non_system_global(name) ) {
     				self[name] = new Collection(name, self);
+						self.collection_names.push(name);
+						//console.log('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&');
+						console.dir(self.collection_names);
 					} 
 				}
 			}
@@ -823,6 +836,7 @@ function Db(databaseName, options) {
 		  	if ( self.name === undefined ) { 		// don't create again.
 					if ( Collection.non_system_global(name) ) {
     				self[name] = new Collection(name, self);
+						self.collection_names.push(name);
 					} 
 				}
   		});
@@ -869,6 +883,7 @@ Db.prototype.createCollection = function(collectionName, options, callback) {
 	var gcb = gotCallback(callback);
 	if ( self.collectionName === undefined ) {
 		self[collectionName] = new Collection(collectionName, self);
+		self.collection_names.push(collectionName);
 	}
 	if ( gcb ) { 
 		callback(null, self.collectionName); 
@@ -884,12 +899,12 @@ Db.prototype.close = function() {
 	if ( !isEmptyObject(self.cacheConnection) ) {
 		try {
 		self.cacheConnection.close();
-		} catch(eeee) { console.dir(eeee); }
+		} catch(eeee) { debug(eeee); }
 	}
 	if ( self.isRemoteConnection ) {
 		try {
 		self.remote_client.close();
-		} catch(eee) { console.dir(eee); }
+		} catch(eee) { debug(eee); }
 	}
 }
 function isRemoteDB(connstr) {

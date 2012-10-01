@@ -30,6 +30,21 @@ db.foo.find({},function(error,result) {
 Indexing
 --------
 
+Basic property level indexing is supported. To create an index:
+
+``` js
+db.cars.ensureIndex({model:1});
+```
+will create an index, and further writes to the cars collection will have the index on
+'model' updated accordingly. If you already have cars in the collection, then you
+should call
+``` js
+db.cars.reIndex();
+```
+to fully populate the index.
+__NOTE__ Index creatation and managment APIs are not yet supported over remote
+tcp connections. You need to run your client locally.
+
 ## globalsd
 
 globalsd is a network deamon for the Globals database. It allows you to run your globalsjs client
@@ -37,9 +52,8 @@ across network connections.
 
 To start:
 
-	>node globalsd/index.js <PORT|default 111105>--dbpath <path to GLOBALS_HOME, defaults process.env.GLOBALS_HOME>
+>node globalsd/index.js <PORT|default 111105>--dbpath <path to GLOBALS_HOME, defaults process.env.GLOBALS_HOME>
 
-
-
-Options:
+The api automatically determines if you are running locally or connecting
+to a remote globalsdb depending on the connection string. 
 	
