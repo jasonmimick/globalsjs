@@ -67,7 +67,7 @@ Client.prototype.connect = function(options) {
 	var current_result_msg_id = '';
 	var batch = [];
 	self.client.on('data', function(data) {
-		console.dir('data event - data='+data);
+		//console.dir('data event - data='+data);
  		var objects = data.toString().split('\n');
 		if ( partial_object.length>0 ) {
 			objects[0] = partial_object + objects[0];
@@ -101,7 +101,7 @@ Client.prototype.connect = function(options) {
 					} else { // batch mode
 						batch.push(o);
 						if ( batch_result_counter == batch_result_size ) {
-							//console.log('calling datacb' + self.datacb.toString());
+							//console.log('calling datacb' + self.dataCallbacks[current_result_msg_id].toString());
 							self.dataCallbacks[current_result_msg_id]({},batch);
 							//self.datacb({},batch);
 						} else {
@@ -139,7 +139,7 @@ Client.prototype.send = function(data,callback) {
 		//self.datacb = callback;
 		callback = self.default_datacb;		// how to make sync?
 	}
-	msg.header = { id : self.get_id(), name : self.name, ts : Date.now() };
+	msg.header = { id : self.get_id(), name : self.name, ts : (new Date()) };
 	msg.data = data;
 	self.dataCallbacks[msg.header.id]=callback;
 	//console.log('%%%%%%%%%%%%%%%%%%%%%%%');
@@ -159,7 +159,7 @@ Client.prototype.global_directory = function(callback) {
 	//console.trace();
 	//console.dir(request);
 	self.send(request, function (e,r) {
-		console.dir('client global_dir callback');console.dir(r);
+		//console.dir('client global_dir callback');console.dir(r);
 		callback(e,r.pop());
 	});
 }	

@@ -7,11 +7,28 @@ var cachedb = require('../../globalsjs');
 // TODO read from command line
 var deamon_opts = {};
 
+function usage() {
+	console.log('node globalsd/index.js [options]');
+	console.log('Options:');
+	console.log('--help');
+	console.log('\tPrint this help and exit.');
+	console.log('--dbpath <ARG>');
+	console.log('\tProvide a path to the running GlobalsDB instance');
+	console.log('--port <ARG>');
+	console.log('\tProvide a port for client TCP connection to connect on\n\toptional, defaults to 11115');
+	console.log('--rest <ARG>');
+	console.log('\tEnable web-based admin console and REST apis\n\tARG is optional port to listen on. Default 11125');
+}
+
 deamon_opts.GLOBALS_PATH = "/Users/jasonmimick/dev/globalsdb/mgr";
 deamon_opts.port = 11115;	// default port
 deamon_opts.admin_web_port = 11125;
 deamon_opts.enable_admin_web_console = false;
 for(var i=2; i<process.argv.length; i++) {
+	if ( process.argv[i]=='--help' ) {
+		usage();
+		process.exit(0);
+	}
 	if ( process.argv[i]=='--dbpath' ) {
 		deamon_opts.GLOBALS_PATH = process.argv[i+1];
 	}
@@ -22,9 +39,9 @@ for(var i=2; i<process.argv.length; i++) {
 	}
 	if ( process.argv[i]=='--rest' ) {
 		deamon_opts.enable_admin_web_console = true;
-		var i = parseInt( process.argv[i+1]);
-		if ( !isNaN(i) ) {
-			deamon_opts.admin_web_port = i;
+		var wport = parseInt( process.argv[i+1]);
+		if ( !isNaN(wport) ) {
+			deamon_opts.admin_web_port = wport;
 		}
 	}
 }	
@@ -76,7 +93,8 @@ td,th { padding:.25em }\n\
 </style>\n';
 		html += '</head><body>';
 		html += '<h2>globalsd '+	require('os').hostname() + ':' + process.pid + '</h2>';
-		html += '<pre>'+db.cacheConnection.version()+'</pre>';
+		html += '<pre>'+db.cacheConnection.version();
+		html += deamon_opts.GLOBALS_PATH+'</pre>';
 		html += '<hr/>';
 		html += '<h3>collections</h3><pre>'+self.collections_html()+'</pre>';
 		html += '<hr/>';
@@ -136,6 +154,7 @@ globalsd.prototype.start = 	function() {
 			c.on('data', function(data) { 
 				var object_buffer = [];
 			  var json = data.toString('utf8',0);	
+				console.dir('data---',json);
 				var objects = json.split(END_OF_MESSAGE);
 				//console.log('server data event');console.dir(objects);
 				if ( partial_object.length > 0 ) {
@@ -186,6 +205,8 @@ globalsd.prototype.start = 	function() {
 				console.dir('SIGINT exception');
 				console.trace();console.dir(Exp);console.trace(); 
 			}
+			debugger;
+			console.dir('SIGINT event handler leaving.');
 		});
 		self.server.on('close', function() {
 			console.log('server close event');

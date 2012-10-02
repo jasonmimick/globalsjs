@@ -575,7 +575,12 @@ Collection.prototype.save = function(object, callback) {
 	glo_ref.object = object;
 	if ( gotCallback(callback) ) {
 		// for async index maintenance, will need to wrap callback...
-		self.db.cacheConnection.update( glo_ref, 'object', callback );
+		//console.dir(glo_ref);
+		self.db.cacheConnection.update( glo_ref, 'object', function(e,o) {
+			debugger;
+			var result = self.update_index(self.index_operation.SAVE, object);
+			callback(e,result);
+		} );
 	} else {
 		var result = self.db.cacheConnection.update( glo_ref, 'object' );
 		//console.dir('save - update result: ');console.dir(result);
@@ -669,9 +674,15 @@ Collection.prototype.ensureIndex = function(object, callback) {
 Collection.prototype.reIndex = function(callback) {
 	var self = this;
 	// naive implmentation here...
-	var objects = self.find();
+	// TODO--- this does not scale at all!!!! - refactor......
+//	var objects = self.find();
 	//debug('reIndex--- objects.length='+objects.length);
-	objects.forEach( function(o) { self.save(o); } );
+//	objects.forEach( function(o) { self.save(o,callback); } );
+	self.find({}, function(e,o ) {
+		var result = self.update_index(self.index_operation.SAVE, o);
+		//self.save(o,callback); 
+		callback({},result);
+	});
 }
 Collection.prototype.dropIndex = function(object, callback) {
 }
@@ -733,6 +744,11 @@ function Db(databaseName, options) {
 	self.server = new Server(options);
 	self.const_options = options;
 	self.databaseName = databaseName;
+	if ( (databaseName === undefined ) || (databaseName.length==0) ) {
+		if ( process.env.GLOBALS_HOME !== undefined ) {
+			self.databaseName = require('path').join(process.env.GLOBALS_HOME,'mgr');
+		}
+	}
 	self.cacheConnection = {};
 	self.isRemoteConnection = false;
 	self.init_remote_connection = init_remote_connection;
@@ -821,8 +837,7 @@ function Db(databaseName, options) {
 					if ( Collection.non_system_global(name) ) {
     				self[name] = new Collection(name, self);
 						self.collection_names.push(name);
-						//console.log('&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&');
-						console.dir(self.collection_names);
+						//console.dir(self.collection_names);
 					} 
 				}
 			}
@@ -913,7 +928,7 @@ function isRemoteDB(connstr) {
 	// otherwise, assume remote
 	try {
 		fs.statSync(connstr);
-		//console.dir('isRemoteDB - false' + connstr);
+		console.dir('isRemoteDB - false' + connstr);
 		return false;
 	} catch (e) {
 	}

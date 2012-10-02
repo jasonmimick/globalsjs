@@ -10,18 +10,16 @@ var path = "globalsdb://localhost:11115";
 var db = new cachedb.Db(path, { resultMode : 'batch' } );
 var x = db.connect({collections: ['testsync']}, function(e,r) {
 	// read back
-	console.dir(db);
+	//console.dir(db);
 	db.testsync.find({food:'granola'},function(err,res) {
 		if ( res.length === 0 ) {
 			console.log('empty results');process.exit(0);
 		}
 		console.dir(res);
-		console.log('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
 		// don't call close here, the api will stream each object back one by one.
 		// here - we can call close, if we are in batch mode - 
 		// the client will stream us all the results for this operation
 			
-		//console.dir(db);
 		// update the last object 
 		var obj = res[res.length-1];
 		obj.lastUpdate = (new Date()).toString();
@@ -31,11 +29,8 @@ var x = db.connect({collections: ['testsync']}, function(e,r) {
 			var o = { __ID: 51, name : 'foo', age: 22};
 			db.testsync.remove(o,function(e2,r2) {
 				console.dir(r2);
-				debugger;
 				db.close();
-
 			});
 		});
 	});
 });
-//process.on('exit', function() { db.close(); } );
