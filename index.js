@@ -373,6 +373,23 @@ function QueryStat(collection) {
 	self.rowCount = 0;
 	self.statId = 0;
 }
+Collection.prototype.count = function(callback) {
+	var self = this;
+	// TODO check if remote connection
+ 	var gloRef = {global: self.name, subscripts: []};
+	if ( gotCallback(callback) ) {
+		self.db.cacheConnection.get(gloRef, function(e,r) {
+			var count = NaN;
+			if ( r.data !== undefined ) {
+				count = r.data;
+			}
+			callback(e,count);
+		});
+	} else {
+		var count = self.db.cacheConnection.get(gloRef);
+		return count.data;
+	}
+}
 Collection.prototype.findOne = function(query, callback) {
 	var self = this;
 	if ( gotCallback(callback) ) {
@@ -878,7 +895,18 @@ function Db(databaseName, options) {
 }
 
 inherits(Db, EventEmitter);
-
+Db.prototype.collections = function() {
+	var self = this;
+	var props = Object.keys(self);
+	var collections = [];
+	for(var i=0; i<props.length; i++) {
+		var prop = props[i];
+		if ( self[prop] instanceof Collection ) {
+			collections.push(prop);
+		}
+	}
+	return collections;
+}
 Db.prototype.global_directory = function() {
 	var self = this;
 	var globals = self.cacheConnection.global_directory({});
@@ -928,7 +956,7 @@ function isRemoteDB(connstr) {
 	// otherwise, assume remote
 	try {
 		fs.statSync(connstr);
-		console.dir('isRemoteDB - false' + connstr);
+		//console.dir('isRemoteDB - false' + connstr);
 		return false;
 	} catch (e) {
 	}
