@@ -69,6 +69,7 @@ function Collection(collectionName, dbInstance) {
 	self.build_index_glo_ref_from_query=build_index_glo_ref_from_query;
 	self.spin_find = spin_find;
 	self.spin_find_index = spin_find_index;
+    self.drop_collection = drop_collection;
 	self.index_glo_ref = function() {
 		return { global : self.name+COLLECTION_INDEX_IDENTIFIER, subscripts : [] };
 	};
@@ -287,6 +288,13 @@ function Collection(collectionName, dbInstance) {
 		return glo_ref;
 	}
 
+    function drop_collection(callback) {
+        if ( gotCallback(callback) ) {
+            self.db.cacheConnection.kill(self.name,callback);
+        } else {
+            return self.db.cacheConnection.kill(self.name);
+        }
+    }
 	// query stats
 	function start_query_stats(query) {
 		var self = this;
@@ -379,7 +387,7 @@ Collection.prototype.count = function(callback) {
  	var gloRef = {global: self.name, subscripts: []};
 	if ( gotCallback(callback) ) {
 		self.db.cacheConnection.get(gloRef, function(e,r) {
-			var count = NaN;
+			var count = NaN;  // should this be 0?
 			if ( r.data !== undefined ) {
 				count = r.data;
 			}
@@ -387,7 +395,7 @@ Collection.prototype.count = function(callback) {
 		});
 	} else {
 		var count = self.db.cacheConnection.get(gloRef);
-		return count.data;
+		return count.data ? count.data : 0;
 	}
 }
 Collection.prototype.findOne = function(query, callback) {
@@ -422,6 +430,10 @@ Collection.prototype.find = function(query, callback) {
 	// if remote, forward to tcp-client-
 	if ( self.db.isRemoteConnection ) {
 		var req = {};
+	   if ( !object ) {
+        debug('remove called with no object - removing all!');
+        self.drop_collection();
+    }
 		req.op = 'find';
 		req.collection = self.name;
 		req.params = [];
@@ -508,7 +520,9 @@ Collection.prototype.find = function(query, callback) {
  
 Collection.prototype.add = function(object, callback) {
 	var self = this;
-	if ( self.db.isRemoteConnection ) {
+    //console.log('Collection.add >>>>>>>>>>>');
+    //console.dir(self.db);
+	if ( self.db && self.db.isRemoteConnection ) {
 		var req = {};
 		req.op = 'add';
 		req.collection = self.name;
@@ -536,21 +550,28 @@ Collection.prototype.add = function(object, callback) {
 	}
 	var id = result.data;
 	object.__ID = id;
-	var updateCB = function(error,result) {
-	  if ( !error ) {
-			object.__ID = id;
-		}
-		callback(error, object);
-	}
 	var updateArgs =
  		{ node : { global : self.name, subscripts : [object.__ID] },
 			object : object
 		}
-	//debug(updateArgs);
+	var updateCB = function(error,result) {
+	  if ( !error ) {
+			object.__ID = id;
+		}
+		var result = self.update_index(self.index_operation.SAVE, updateArgs.object);
+		callback(error, object);
+	}
+    //debug(updateArgs);
 	if ( gotCallback(callback) ) {
 		self.db.cacheConnection.update(updateArgs,'object',updateCB);
 	} else {
-		return self.db.cacheConnection.update(updateArgs,'object');
+		var update_result = self.db.cacheConnection.update(updateArgs,'object');
+        if ( update_result==0 ) {
+	        return result = self.update_index(self.index_operation.SAVE, updateArgs.object);
+        } else {
+            return update_result;
+        }
+
 	}
 }
 
@@ -574,6 +595,7 @@ Collection.prototype.save = function(object, callback) {
 	}
 	
 	if ( self.db.isRemoteConnection ) {
+        console.dir("Collection.save - remote connection");
 		var req = {};
 		req.op = 'save';
 		req.collection = self.name;
@@ -614,7 +636,7 @@ Collection.prototype.save = function(object, callback) {
 
 Collection.prototype.remove = function(object, callback) {
 	var self = this;
-	if ( object instanceof Array ) {
+    if ( object instanceof Array ) {
 		object = object.pop();
 		//console.dir(object);console.dir('that was popped');
 	}
@@ -634,7 +656,12 @@ Collection.prototype.remove = function(object, callback) {
 			return self.db.remote_client.send(req);		
 		}
 	}
-	debug('Collection.remove()  - object->');debug(object);
+   if ( !object ) {
+        debug('remove called with no object - removing all!');
+        self.drop_collection(callback);
+        return;
+    }
+		debug('Collection.remove()  - object->');debug(object);
   var	glo_ref = self.fetch_glo_ref_from_object(object);
 	debug(glo_ref);
 	if ( gotCallback(callback) ) {
@@ -663,6 +690,115 @@ Collection.prototype.remove = function(object, callback) {
 
 	}
 }
+// ensureSQL will enable SQL access to this collection.
+// You should call this with a prototypical object of you collection
+// Then, the object will be inspected and a corresponding Caché class
+// will get generated for SQL access.
+// If you collection contains object with different properties, then you
+// can also pass in an array for the object parameter, and we will
+// take the union of all fields. 
+// Datatypes supported are just String and Integer, you can override
+// (with Caché datatypes) in the optional meta parameter.
+// Options in the meta parameter
+// meta = {
+//  package : <package_name> (default: gdb)
+//  classname : <class_name> (default: collection name)
+//  properties : [ { name : <property_name>, type : <Caché_datatype> }, ... ]
+//  }
+//
+Collection.prototype.ensureSQL = function(object, meta, callback) {
+    var self = this;
+    // check args
+    if ( arguments.length == 3 ) { // got meta
+        // good to go
+    } else if ( arguments.length == 2 ) {
+        if ( Object.prototype.toString.call(meta) == "[object Function]" ) {
+            // 2nd parameter was a function -> it's the callback
+            var callback = meta; 
+        } else { // no callback
+            var callback = noop;
+        }
+    } else if ( arguments.length == 1 ) {
+        var meta = {};  // default are setup below
+        var callback = noop;
+    } else { // got no args!
+     debug('ensureSQL() on ' + self.name + ' called with no arguments. ');
+     return;
+    }
+    // check meta is good
+    debugger;
+    if ( meta.package == undefined ) {
+        meta.package = 'gdb'; //default
+    }
+    if ( meta.classname == undefined ) {
+        meta.classname = self.name; //default
+    }
+    if ( meta.properties == undefined ) {
+        meta.properties = [];
+        for (var prop in object) {
+            var m = {};
+            m.name = prop;
+            m.type = "%Library.String";
+            if ( typeof object[prop]==='number' ) { 
+                if ( object[prop]==Math.round(object[prop]) ) {
+                    m.type = "%Library.Integer";
+                } else {
+                    m.type = "%Library.Double";
+                }
+            }
+            meta.properties.push(m);
+        }
+    }
+    meta.indicies = [];
+    debug(self.indexes);
+    for (var i=0; i<self.indexes.length; i++) {
+        var prop_name = Object.keys(self.indexes[i])[0]; // only one property
+        meta.indicies.push( { name : prop_name, value : self.indexes[i][prop_name] } );
+        //debug('Index - ensureSQL idx=');
+        //debug(self.indexes[i]);
+        //debug("finish this!!");
+    }
+    // build glo_ref for class generator deamon
+    debugger;
+    var transaction_id = self.db.cacheConnection.increment('globalsjs.sql','in',1);
+    debug("ensureSQL transaction_id="+transaction_id);
+    var glo_ref = {};
+    glo_ref.global = 'globalsjs.sql';
+    glo_ref.subscripts = [];
+    glo_ref.subscripts.push('in');
+    glo_ref.subscripts.push(transaction_id);
+    glo_ref.subscripts.push('classname');
+    glo_ref.data = meta.package + '.' + meta.classname;
+    debug(glo_ref);
+    var result=self.db.cacheConnection.set( glo_ref );
+    debug(result);
+    glo_ref.subscripts.pop();
+    glo_ref.subscripts.push('globalname');
+    glo_ref.data = meta.classname;
+    debug(glo_ref);
+    result=self.db.cacheConnection.set( glo_ref );
+    debug(result);
+    glo_ref.subscripts.pop();
+    glo_ref.subscripts.push('properties');
+    for(var i=0; i<meta.properties.length; i++) {
+        glo_ref.subscripts.push(meta.properties[i].name);
+        glo_ref.data = meta.properties[i].type;
+        result=self.db.cacheConnection.set( glo_ref );
+        debug(result);
+        glo_ref.subscripts.pop();
+    }
+    glo_ref.subscripts.pop();   // pop off 'properties'
+    glo_ref.subscripts.push('indicies');
+    for(var i=0; i<meta.indicies.length; i++) {
+        glo_ref.subscripts.push( meta.indicies[i].name );
+        glo_ref.data = meta.indicies[i].value;
+        result=self.db.cacheConnection.set( glo_ref );
+        debug(result);
+        glo_ref.subscripts.pop();
+    }
+
+
+}
 Collection.prototype.ensureIndex = function(object, callback) {
 	var self = this;
 	if ( !callback ) { callback = noop; }
@@ -671,6 +807,21 @@ Collection.prototype.ensureIndex = function(object, callback) {
 	// this function should only see if the index exists, and if so update the "save handler" global - 
 	// which will contain info for the CRUD operations.
 	// rebuildIndex() does the building...
+    //
+    // Make sure we don't already have an index on this property
+    var index_exists = false;
+    for(var i=0; i<self.indexes.length; i++) {
+        Object.keys(self.indexes[i]).forEach( function(index_field) {
+            Object.keys(object).forEach( function(object_field) {
+                if ( object_field==index_field ) {
+                    self.indexes[i][index_field]=object[object_field]; // copy collation order
+                    // we already got this index.
+                    index_exists = true;
+                }
+            });
+        });
+    }
+    if ( index_exists ) { callback(); return; }
 	self.indexes.push( object );
 	Object.keys(object).forEach( function( indexField ) {
 		var glo_ref = self.system_glo_ref();
@@ -695,11 +846,20 @@ Collection.prototype.reIndex = function(callback) {
 //	var objects = self.find();
 	//debug('reIndex--- objects.length='+objects.length);
 //	objects.forEach( function(o) { self.save(o,callback); } );
-	self.find({}, function(e,o ) {
-		var result = self.update_index(self.index_operation.SAVE, o);
-		//self.save(o,callback); 
-		callback({},result);
-	});
+    if ( gotCallback(callback) ) {
+	    self.find({}, function(e,o ) {
+            console.log('reIndex---callback');console.dir(o);
+		    var result = self.update_index(self.index_operation.SAVE, o);
+		    //self.save(o,callback); 
+		    callback({},result);
+	    });
+    } else {
+        debugger;
+        var us = self.find();
+        for(var i=0; i<us.length; i++) {
+            var r = self.update_index(self.index_operation.SAVE, us[i]);
+        }
+    }
 }
 Collection.prototype.dropIndex = function(object, callback) {
 }
@@ -789,12 +949,13 @@ function Db(databaseName, options) {
 	});
 
 	function init_remote_connection(url) {
+        debugger;
 		var options = get_options_from_url(url);
-		if ( self.const_options.resultMode !== undefined ) {
+		if ( self.const_options && self.const_options.resultMode !== undefined ) {
 			options.resultMode = self.const_options.resultMode;
 		}
 		self.remote_client = new globalsd_client.Client(options);	
-		//debugger;
+		debugger;
 		self.remote_client.connect();
 		//callback({},{OK:1});
 	}
@@ -844,8 +1005,9 @@ function Db(databaseName, options) {
 		//console.dir('self.isRemoteConnection='+self.isRemoteConnection);
 		if ( self.isRemoteConnection ) {
 			self.remote_client.global_directory(function(e,glos) {
-			//console.log('remote_client global_directory callback');
-			//console.dir(glos);
+			console.log('remote_client global_directory callback');
+			console.dir(glos);
+            console.dir(e);
 			var keys = Object.keys(glos);
 			for(var i=0; i<keys.length; i++) {
 				var key = keys[i];  
@@ -863,7 +1025,10 @@ function Db(databaseName, options) {
 			// once we connect - add a property for each global (aka Collection);
 			// this is NOT async on purpose, the connection
 			// isn't ready for use until it's initialized.
-	  	globals = self.cacheConnection.global_directory({});
+	  	    globals = self.cacheConnection.global_directory({});
+            debug('NOT adding collection for each existing global!!!!!!');
+            debug(globals);
+            globals = [];
 			globals.forEach(function(name) {  
 		  	if ( self.name === undefined ) { 		// don't create again.
 					if ( Collection.non_system_global(name) ) {
@@ -871,8 +1036,24 @@ function Db(databaseName, options) {
 						self.collection_names.push(name);
 					} 
 				}
-  		});
-		}
+  		    });
+		    /** experimental - for any of our collections, which are not
+            in ^globalsjs("collections",<collection_name>) we want to write
+            a reminder so that when we save objects into the collection, we can update
+            the ^globalsjs.sql("in" node for the class generator deamon to pick
+            up and generate the classes for SQL access to the collection.
+            Only do this if the deamon is running??? 
+            Check - ^globalsjs.sql("control","enabled") exists. (enabled just means
+            that the sql-code-gen is turned on, we don't actually need the deamon
+            to by running, you could do that later.
+            This only really makes sense for local connections - the tcp
+            connections will eventually go over the wire and land up here anyway.
+            **/
+            var sqldon = self.cacheConnection.get('globalsjs.sql','control','enabled');
+            if ( sqldon ) {
+                console.log('sqldon='+sqldon);
+            }
+        }
 	}
 	/*
 	* Available options:
@@ -973,17 +1154,20 @@ Db.prototype.connect = function(options, callback) {
 	// right now, url is just the path to the globalsdb mgr directory
 	// user,password and namespace don't seem to matter at all!
 	var pathToGlobalsMGR = self.databaseName;		// TO-DO check it's valid
+    //console.log('about to check remote');
 	if ( isRemoteDB( pathToGlobalsMGR ) ) {
 		self.isRemoteConnection = true;
 		self.init_remote_connection( pathToGlobalsMGR, callback );
 		self.init_collections(options);
+            console.log('init_collections after');
 		if ( gotCallback(callback) ) {
 			callback({},{OK:1});
 		}
 		return;
 	}
-	var userName = "BugsBunny",password = "";
-	var namespace = "";
+	//var userName = "BugsBunny",password = "";
+	var userName = "_system",password = "SYS";
+	var namespace = "SAMPLES";
 	if ( options.namespace ) { namespace = options.namespace; }
 	options['___connection'] = { path : pathToGlobalsMGR, username : userName, password : password, namespace : namespace};
 	debug('Db.connection options',options);

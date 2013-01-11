@@ -61,8 +61,15 @@ var http = require('http');
 })();
 
 var db = new cachedb.Db(deamon_opts.GLOBALS_PATH);
+/*
+var db = new cachedb.Db({ path:deamon_opts.GLOBALS_PATH
+                          ,username : "_system"
+                          ,password : "SYS"
+                          ,namespace : "SAMPLES" } );
+*/
 // optionally specify new run-time collections here when you start the deamon?
 var x = db.connect();
+console.dir('x===>');console.dir(x);
 var END_OF_MESSAGE = '\n';
 var HTTP_HEADERS = {};
 HTTP_HEADERS['ok-text'] = { status : 200, content_type : 'text/plain' };
@@ -151,7 +158,7 @@ globalsd.prototype.start = 	function() {
 				//delete self.clients[c['-~*globalsd-client*~-']];
 				console.dir(util.inspect(self.clients,5));
   		});
-			c.on('data', function(data) { 
+		c.on('data', function(data) { 
 				var object_buffer = [];
 			  var json = data.toString('utf8',0);	
 				console.dir('data---',json);
@@ -167,9 +174,9 @@ globalsd.prototype.start = 	function() {
 					
 						var reqH = new gdb_request_handler(self);
 						//self.emit('request',o,c); // was getting funky results
-																				// with the event emitter, might
-																				// be bug with node 0.6.x I have to use
-																				// TODO - refactor to use events so not blocking
+		                        // with the event emitter, might
+								// be bug with node 0.6.x I have to use
+								// TODO - refactor to use events so not blocking
 						reqH.onRequest(o,c);
 						//console.log('why another request???? ---------################');
 						//console.dir(objects);
@@ -212,7 +219,16 @@ globalsd.prototype.start = 	function() {
 			console.log('server close event');
 			
 		});
-		self.server.listen(self.opts.port, function() { //'listening' listener
+        self.server.on('error', function(e) {
+            if (e.code == 'EADDRINUSE') {
+                console.log('Address in use, retrying...');
+                 setTimeout(function () {
+                    server.close();
+                    server.listen(PORT, HOST);
+                 }, 1000);
+            }
+        });
+		self.server.listen(self.opts.port,function() { //'listening' listener
 			console.log('a node.js powered network deamon for GlobalsDB');
 			console.log('started:' + (new Date).toString() );
 			console.log('listening for connections on port:' + self.opts.port);
@@ -271,7 +287,9 @@ function gdb_request_handler(globals_deamon) {
 				console.log('400');console.log(req);
 				return;
 			};
-	
+            console.log('~~i@@@@@@@@@@@~~~~~~~~~~~~~~~~~~~~~~~~~~~~');
+            console.dir(db);	console.dir(operation);
+            console.log('~~~~@@@@@@@@@~~~~~~~~~~~~~~~~~~~~~~~~~~');
 			result = operation.call(db[collection],req.data.params);
 			console.dir('~~~~~~~~~');console.dir(req.data.params);
 		}

@@ -4,7 +4,13 @@ var last = "";
 var lineCount = 0;
 var fields = [ 'Date', 'Ticker', 'Open', 'High', 'Low', 'Close', 'Volume' ];
 var globalsjs = require('../../globalsjs');
-var path = "/Users/jasonmimick/dev/globalsdb/mgr";
+console.dir(process.env.GLOBALS_HOME);
+var path = process.env.GLOBALS_HOME;
+//var path = process.env.GLOBALS_HOME+"/mgr"; //"/Users/jasonmimick/dev/globalsdb/mgr";
+if (process.argv[2] !== undefined ) {
+	path = process.argv[2];
+}
+console.log('path='+path);
 //var db = new globalsjs.Db('globalsdb://localhost:11115',{ resultMode : 'batch' } );
 var db = new globalsjs.Db(path,{ resultMode : 'batch' } );
 //db.connect({ collections : ['stocks'] }, function (e,r) {

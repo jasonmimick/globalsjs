@@ -1,0 +1,288 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (Apple Mac OS X for x86-64) 2012.1.0HS (Build 453U)" ts="2012-12-05 08:57:39">
+<Class name="foo.ClassGen">
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%RegisteredObject</Super>
+<TimeChanged>62796,30421.266922</TimeChanged>
+<TimeCreated>62790,53677.188481</TimeCreated>
+
+<Method name="CreateCDef">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>className:%String,*CDef:%Dictionary.ClassDefinition</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set CDef=""
+	If className="" Quit $$$OK
+	
+ 	#; Delete any pre-existing definition
+	Do Delete^%apiOBJ(className,"-d")
+
+	#; Create a new class definition
+	Kill %objlasterror
+	Set CDef=##class(%Dictionary.ClassDefinition).%New(className)
+	If '$isobject(CDef) {
+		Quit $Get(%objlasterror,$$$ERROR($$$FailedToCreateClass,className))
+	}
+	Set CDef.ProcedureBlock=1
+	#; Force ClassVersion to 25 since LegacyInstanceContext is not needed
+	Set CDef.ClassVersion=25
+
+	#; Add class to list of client classes
+	//Set ..ClientClassList(className) = ""
+
+	Quit $$$OK
+]]></Implementation>
+</Method>
+
+<Method name="CreateProperty">
+<Internal>1</Internal>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>pClassName,pCDef,pName,pType,pSeqNo</FormalSpec>
+<Private>1</Private>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+ 	Set tSC=$$$OK
+ 	do { 
+
+ 		#; Create a new parameter
+		Set tClassName=pClassName_":"_pName
+		Kill %objlasterror
+ 		Set tCDef=##class(%Dictionary.PropertyDefinition).%New(tClassName)
+ 		If tCDef=$$$NULLOREF {
+	 		Set tSC=$Get(%objlasterror,$$$ERROR($$$FailedToCreateClass,tClassName) )
+	 		Quit
+ 		}
+
+ 		#; Fill in the type
+ 		Set type=$piece(pType,"(",1)
+ 		Set parameters=$piece(pType,"(",2)
+ 		If (parameters["ELEMENTTYPE=""") &&
+ 		  $case(type,"%ArrayOfDataTypes":1,"%ArrayOfObjects":1,"%ListOfDataTypes":1,"%ListOfObjects":1,:0) {
+	 		Set tCDef.Collection=$select(type["%Array":"array",1:"list")
+	 		Set type=$piece($piece(parameters,"ELEMENTTYPE=""",2),"""",1)
+		}
+ 		Set tCDef.Type=type
+
+ 		#;	Insert into the class definition
+ 		If $get(pSeqNo)'="" Set tCDef.SequenceNumber=pSeqNo
+ 		Set tSC=pCDef.Properties.Insert(tCDef)
+ 	} while (0)
+
+ 	Quit tSC
+]]></Implementation>
+</Method>
+
+<Method name="GenerateSQLStorage">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>globalName:%String,properties:%List,indices:%List,classdef:%Dictionary.ClassDefinition</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set storageDef = ##class(%Dictionary.StorageDefinition).%New("GlobalsJSSQLStorage")
+	Set storageDef.Type="%CacheSQLStorage"
+	Set sc=classdef.Storages.Clear()
+	If $$$ISERR(sc) Quit sc
+	Set storageDef.Name = "GlobalsJSSQLStorage"
+	Set sc=classdef.Storages.Insert(storageDef)
+	If $$$ISERR(sc) Quit sc
+	Set sqlMap = ##class(%Dictionary.StorageSQLMapDefinition).%New("SQLMap")
+	Set sqlMap.Name = "SQLMap"
+	Set sqlMap.Global = "^"_globalName
+	Set propName = $Order(properties(""))
+	While ( propName'="" ) {
+		Set sqlDataMap = ##class(%Dictionary.StorageSQLMapDataDefinition).%New()
+		Set sqlDataMap.Name = propName
+		Set sqlDataMap.Node = """"_propName_""""
+		Set sqlDataMap.parent = sqlMap
+		Set propName = $Order(properties( propName ))
+	}
+	Set rowSpec = ##class(%Dictionary.StorageSQLMapRowIdSpecDefinition).%New()
+	Set rowSpec.Name=1
+	Set rowSpec.Field="ID"
+	Set rowSpec.parent = sqlMap
+	Set subscript = ##class(%Dictionary.StorageSQLMapSubDefinition).%New()
+	Set subscript.Name=1
+	Set subscript.Expression="{ID}"
+	Set subscript.parent=sqlMap
+	Set sqlMap.Type="data"
+	Set sqlMap.parent=storageDef
+	Set indexName = $Order(indices("")) 
+	While ( indexName'="" ) {
+		Set sqlIndexMap = ##class(%Dictionary.StorageSQLMapDefinition).%New(indexName_"IndexMap")
+		Set sqlIndexMap.Name =  indexName_"IndexMap"
+		Set sqlIndexMap.Global= "^"_globalName_"1gdb"
+		Set sqlIndexMap.PopulationType="full"
+		Set sqlIndexMap.Type="index"
+		Set sqlIndexMap.parent = storageDef
+		Set rowSpec = ##class(%Dictionary.StorageSQLMapRowIdSpecDefinition).%New()
+		Set rowSpec.Name=1
+		Set rowSpec.Field="ID"
+		Set rowSpec.Expression="{L3}"
+		Set rowSpec.parent = sqlIndexMap
+		Set sub1 = ##class(%Dictionary.StorageSQLMapSubDefinition).%New(1)
+		Set sub1.Name = 1
+		Set sub1.Expression=""""_indexName_""""
+		Set sub1.parent=sqlIndexMap
+		Set sub2 = ##class(%Dictionary.StorageSQLMapSubDefinition).%New(2)
+		Set sub2.Name = 2
+		Set sub2.Expression="{"_indexName_"}"
+		Set sub2.parent = sqlIndexMap
+		Set sub3 = ##class(%Dictionary.StorageSQLMapSubDefinition).%New(3)
+		Set sub3.Name = 3
+		Set sub3.Expression = "{ID}"
+		Set sub3.parent = sqlIndexMap
+		Set indexName = $Order(indices(indexName))
+	}
+	
+	Quit $$$OK
+		// ^foo1gdb("name",value,id)
+]]></Implementation>
+</Method>
+
+<Method name="GenerateClass">
+<Description><![CDATA[
+
+Generate a persistent class named 'classname', with 
+the 'properties' where 'properties' is a Map<String,String>
+of PropertyName->DataType pairs, e.g.
+properties("Name")="%Library.String", etc..]]></Description>
+<ClassMethod>1</ClassMethod>
+<FormalSpec>classname:%String,properties,indicies,globalname</FormalSpec>
+<ReturnType>%Status</ReturnType>
+<Implementation><![CDATA[
+	Set sc=..CreateCDef(classname,.classdef)
+	If ($$$ISERR(sc) ) Quit sc
+	Set classdef.Super="%Persistent"
+	Set classdef.StorageStrategy="GlobalsJSSQLStorage"
+	Set propname=$Order(properties(""))
+	Set seq=1
+	Do ..CreateProperty(classname,classdef,"ID","%Library.String",seq)
+	while ( propname'="" ) {
+		Set proptype=properties(propname)
+		Set seq = $i(seq)
+		Set sc=..CreateProperty(classname,classdef,propname,proptype,seq)
+		W propname,"--",sc,!
+		Set propname=$Order(properties(propname))
+	}
+	// create index.
+	Set idx=##class(%Dictionary.IndexDefinition).%New()
+	Set idx.Name = "IDIndex"
+	Set idx.IdKey = 1
+	Set idx.PrimaryKey = 1
+	Set idx.Unique = 1
+	Set idx.Properties="ID"
+	Set idx.parent = classdef 
+	Set sc=classdef.%Save()
+	If ($$$ISERR(sc) ) Quit sc
+	Set sc=..GenerateSQLStorage(globalname,.properties,.indicies,classdef)
+	If $$$ISERR(sc) Quit sc
+	Set sc=classdef.%Save()
+	If ($$$ISERR(sc) ) Quit sc
+	Quit $system.OBJ.Compile(classname)
+]]></Implementation>
+</Method>
+
+<Method name="Deamon">
+<Description>
+Sit an spin over ^%globalsjs.sql
+Looking for updates, when we get one spin a job
+to go generate a class - this will expose the data
+through sql</Description>
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+    If ( $Get(^globalsjs.sql("control","enabled"))=0 ) {
+        Do ..DeamonLog("Attempted to start, but not enabled.")
+        Do ..DeamonLog("Check ^globalsjs.sql(""control"",""enabled"")")
+        Quit
+    }
+	If ( $Data(^globalsjs.sql("control","stop") ) ) {
+		Do ..DeamonLog("Got stop signal, deamon stopping")
+		Kill ^globalsjs.sql("control","stop")
+		Quit
+	}
+	Do ..DeamonLog("Start")
+	Set lastid=$Get(^globaljs.sql("in","lastid"))
+	If lastid="" Set lastid=0
+	// any work?
+	Set nextid=$Order( ^globalsjs.sql("in",lastid) )
+	While ( nextid'="lastid" ) {
+		Do ..DeamonLog("Start processing in node:"_nextid)
+		Set classname=^globalsjs.sql("in",nextid,"classname")
+		Set globalname=^globalsjs.sql("in",nextid,"globalname")
+		Merge properties=^globalsjs.sql("in",nextid,"properties")
+		Merge indicies=^globalsjs.sql("in",nextid,"indicies")
+		zb
+		Set sc=..GenerateClass(classname,.properties,.indicies,globalname)
+		If ( $$$ISERR(sc) ) {
+			Do $system.Status.DecomposeStatus(sc,.err)
+			For i=1:1:err {
+				Do ..DeamonLog("Error: "_err(i))
+			}
+		} Else {
+			Do ..DeamonLog("node "_nextid_" completed successfully")
+			Merge ^globalsjs.sql("out",nextid)=^globalsjs.sql("in",nextid)
+			Kill ^globalsjs.sql("in",nextid)
+		}
+		Set ^globalsjs.sql("in","lastid")=nextid
+		Set nextid=$Order( ^globalsjs.sql("in",nextid) )
+	}
+	Set sleeptime=$G(^globalsjs.sql("config","sleeptime"),30)
+	Do ..DeamonLog("Sleeping for "_sleeptime_" seconds")
+	Hang sleeptime
+	Job ##class(foo.ClassGen).Deamon()
+]]></Implementation>
+</Method>
+
+<Method name="DeamonLog">
+<ClassMethod>1</ClassMethod>
+<FormalSpec>Message:%String</FormalSpec>
+<Implementation><![CDATA[	Set ^globalsjs.sql("log",$i(^globalsjs.sql("log")),$H)=Message
+]]></Implementation>
+</Method>
+
+<Method name="Test">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	Set classname="foo.footest"
+	Set properties("Name")="%Library.String"
+	Set properties("Age")="%Library.Integer"
+	Set properties("Email")="%Library.String"
+	Set sc=..GenerateClass(classname,properties)
+	If ( $$$ISERR(sc) ) {
+		Do $system.OBJ.DisplayError(sc)
+	}
+]]></Implementation>
+</Method>
+
+<Method name="GetSampleClassMeta">
+<ClassMethod>1</ClassMethod>
+<FormalSpec><![CDATA[&classname,&properties,&indicies,&globalname]]></FormalSpec>
+<Implementation><![CDATA[
+	Set defaultSchema = "gdb"
+	Set classname=defaultSchema_".foopeople"             // Usually should be collection name, may need to prefix default "package"
+	Set globalname = "foopeople"   // Collection name
+	Set properties("name")="%Library.String"
+	Set properties("age")="%Library.Integer"
+	Set properties("email")="%Library.String"
+	//Set indicies("Name")=1
+	Set indicies("email")=1
+]]></Implementation>
+</Method>
+
+<Method name="BootstrapTest">
+<ClassMethod>1</ClassMethod>
+<Implementation><![CDATA[
+	// load up some sample data in the communication global
+	Lock +^globalsjs.sql
+	Set i=$i(^globalsjs.sql("in"))
+	Do ..GetSampleClassMeta(.classname,.properties,.indicies,.globalname)
+	Set ^globalsjs.sql("in",i,"classname")=classname
+	Set ^globalsjs.sql("in",i,"globalname")=globalname
+	Merge ^globalsjs.sql("in",i,"properties")=properties
+	Merge ^globalsjs.sql("in",i,"indicies")=indicies
+	Lock -^globalsjs.sql
+]]></Implementation>
+</Method>
+</Class>
+</Export>

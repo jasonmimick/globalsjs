@@ -186,12 +186,14 @@ function percent_G(cmd,callback) {
 
 function open_connection() {
 	var cache = new globalsdb.Cache();
+    console.log('globalsdb_home='+globalsdb_home);
 	var conninfo = {
 		path : globalsdb_home,
-		user : "percentG.js",
-		password : "Is This Secure?",
-		namespace : "Wish this worked"
+		username : '_system' /*"percentG.js"*/,
+		password : 'SYS' /*"Is This Secure?"*/,
+		namespace : 'SAMPLES' /*"Wish this worked"*/
 	};
+    console.dir( conninfo );
 	cache.open( conninfo );
 	return cache;
 }
@@ -200,9 +202,9 @@ function global_directory_dump(global) {
 	var cache = new globalsdb.Cache();
 	var conninfo = {
 		path : globalsdb_home,
-		user : "percentG.js",
-		password : "Is This Secure?",
-		namespace : "Wish this worked"
+		username : "_system",
+		password : "SYS",
+		namespace : "SAMPLES"
 	};
 	cache.open( conninfo );
 	__glb_dir_dump(cache,global);
@@ -246,9 +248,9 @@ function global_dump(global) {
 	var cache = new globalsdb.Cache();
 	var conninfo = {
 		path : globalsdb_home,
-		user : "percentG.js",
-		password : "Is This Secure?",
-		namespace : "Wish this worked"
+		username : "_system",
+		password : "SYS",
+		namespace : "SAMPLES"
 	};
 	var subs = [];
 	// foo

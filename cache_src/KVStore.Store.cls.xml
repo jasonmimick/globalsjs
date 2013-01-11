@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for Windows (x86-64) 2013.1 (Build 346U)" ts="2012-12-04 13:20:10">
+<Class name="KVStore.Store">
+<Description>
+KVStore.StoreService</Description>
+<ProcedureBlock>1</ProcedureBlock>
+<Super>%SOAP.WebService</Super>
+<TimeChanged>62795,47997.86322</TimeChanged>
+<TimeCreated>62794,61326.301281</TimeCreated>
+
+<Parameter name="SERVICENAME">
+<Description>
+Name of the WebService.</Description>
+<Default>StoreService</Default>
+</Parameter>
+
+<Parameter name="NAMESPACE">
+<Description>
+TODO: change this to actual SOAP namespace.
+SOAP Namespace for the WebService</Description>
+<Default>http://tempuri.org</Default>
+</Parameter>
+
+<Parameter name="USECLASSNAMESPACES">
+<Description>
+Namespaces of referenced classes will be used in the WSDL.</Description>
+<Default>1</Default>
+</Parameter>
+
+<Method name="Get">
+<Description>
+TODO: add arguments and implementation.
+GetValue</Description>
+<FormalSpec>Key:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	//Set kv = ##class(KVStore.Store).%OpenId(Key)
+	If ( $Data(^kvstore(Key) )) {
+		Set Value = ^kvstore(Key)
+		Set ^kvstore.log($i(^kvstore.log),"Get",$H)=$lb(Key,Value)
+
+		Quit Value  //##class(%CSP.Page).QuoteJS(^kvstore(Key))
+	} Else {
+		Quit ""
+	}
+]]></Implementation>
+</Method>
+
+<Method name="Set">
+<FormalSpec>Key:%String,Value:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	Set ^kvstore.log($i(^kvstore.log),"Set",$H)=$lb(Key,Value)
+	Set $ZT="SetLockFail"
+	Lock +^kvstore(Key)
+	Set ^kvstore(Key)=Value
+	Lock -^kvstore(Key)
+	Quit "OK"	
+SetLockFail
+	Set $ZT=""
+	Quit "ERROR"
+]]></Implementation>
+</Method>
+
+<Method name="Remove">
+<FormalSpec>Key:%String</FormalSpec>
+<ReturnType>%String</ReturnType>
+<WebMethod>1</WebMethod>
+<Implementation><![CDATA[
+	Set $ZT="SetLockFail"
+	Lock +^kvstore(Key)
+	Kill ^kvstore(Key)
+	Lock -^kvstore(Key)
+	Quit "OK"	
+SetLockFail
+	Set $ZT=""
+	Quit "ERROR"
+]]></Implementation>
+</Method>
+</Class>
+</Export>

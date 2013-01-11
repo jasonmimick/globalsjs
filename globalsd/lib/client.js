@@ -53,13 +53,19 @@ Client.prototype.connect = function(options) {
 		// able to inject more options
 		//console.log('server data event');	
 	}
+    console.log("client connect");console.dir(self);
 	self.client = net.connect({port: self.port, host : self.host},
   		function(c) { //'connect' listener
-  			//console.log('client connected');
+  			console.log('client connected');
 	});
+    self.client.on('connect', function() {
+        console.dir('client.connect ==');
+    });
 	self.client.on('error', function (error) {
 		//self.datacb(error);
+        console.dir("error-------------- client.on");
 		console.error(error);
+        console.trace();
 	});
 	var partial_object = '';
 	var batch_result_counter = 0;

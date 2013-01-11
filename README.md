@@ -57,3 +57,7 @@ To start:
 The api automatically determines if you are running locally or connecting
 to a remote globalsdb depending on the connection string. 
 	
+## Caché Setup
+    You need to make sure that the %Service_Callin is enabled.
+    SMP -> System Administration -> Security -> Services -> %Service_Callin then check "Service Enabled" and Save
+
