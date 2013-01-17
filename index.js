@@ -24,6 +24,7 @@ var EventEmitter = require('events').EventEmitter,
 		fs = require('fs'),
 		url = require('url');
 var globalsd_client = require('./globalsd/lib/client.js');
+var query_processor = require('./query.js');
 var noop = function() {};
 var isEmptyObject = function(o) {
 		for(var x in o) { return false; }  // this is how jQuery checks 'isEmptyObject'
@@ -252,6 +253,7 @@ function Collection(collectionName, dbInstance) {
 		var filtered = [];
 		//debug(results);
 		//debug(query);
+        /* this is original simple query processing 
 		for(var i=0; i<results.length; i++) {
 			var obj = results[i];
 			// very simple query options now...
@@ -263,6 +265,10 @@ function Collection(collectionName, dbInstance) {
 				}
 			}
 		}	
+        end simple original query processing */
+        // New query processor
+        var qp = new query_processor.Query(query);
+        filtered = qp.execute(results);
 		//debug(filtered);
 		//filtered = self.(filtered);
 		if ( gotCallback(callback) ) {
@@ -616,7 +622,7 @@ Collection.prototype.save = function(object, callback) {
 		// for async index maintenance, will need to wrap callback...
 		//console.dir(glo_ref);
 		self.db.cacheConnection.update( glo_ref, 'object', function(e,o) {
-			debugger;
+			//debugger;
 			var result = self.update_index(self.index_operation.SAVE, object);
 			callback(e,result);
 		} );
@@ -726,7 +732,7 @@ Collection.prototype.ensureSQL = function(object, meta, callback) {
      return;
     }
     // check meta is good
-    debugger;
+    //debugger;
     if ( meta.package == undefined ) {
         meta.package = 'gdb'; //default
     }
@@ -759,7 +765,7 @@ Collection.prototype.ensureSQL = function(object, meta, callback) {
         //debug("finish this!!");
     }
     // build glo_ref for class generator deamon
-    debugger;
+    //debugger;
     var transaction_id = self.db.cacheConnection.increment('globalsjs.sql','in',1);
     debug("ensureSQL transaction_id="+transaction_id);
     var glo_ref = {};
@@ -854,7 +860,7 @@ Collection.prototype.reIndex = function(callback) {
 		    callback({},result);
 	    });
     } else {
-        debugger;
+        //debugger;
         var us = self.find();
         for(var i=0; i<us.length; i++) {
             var r = self.update_index(self.index_operation.SAVE, us[i]);
@@ -949,13 +955,13 @@ function Db(databaseName, options) {
 	});
 
 	function init_remote_connection(url) {
-        debugger;
+        //debugger;
 		var options = get_options_from_url(url);
 		if ( self.const_options && self.const_options.resultMode !== undefined ) {
 			options.resultMode = self.const_options.resultMode;
 		}
 		self.remote_client = new globalsd_client.Client(options);	
-		debugger;
+		//debugger;
 		self.remote_client.connect();
 		//callback({},{OK:1});
 	}

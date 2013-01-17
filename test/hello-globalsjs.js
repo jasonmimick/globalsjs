@@ -19,11 +19,10 @@
 
 var connection_string = process.argv[2];
 var globalsjs = require('../../globalsjs');
-var load_size = 1; //100;
+var load_size = 100;
 var db = new globalsjs.Db( connection_string );
 // create new collection - 'foopeople'
 db.connect( { collections : [ 'foopeople', 'books' ] } ); 
-
 db.books.ensureIndex( { Author : 1 });
 db.books.ensureIndex( { Price : 1 });
 var book = { Author : 'Bill Bryson', Price : 14.99, Title : 'A Walk in the woods', Copyright : '1999' };
@@ -31,7 +30,7 @@ var book2 = { Author : "Madeleine L'Engle", Price : 9.99, Title : 'A Wrinkle in 
 db.books.save(book);
 db.books.save(book2);
 db.books.ensureSQL( book );
-return; // for testing
+//return; // for testing
 db.foopeople.ensureIndex( { name : 1 } );
 // create and save some folks
 for(var i=0; i<load_size; i++) {
@@ -41,7 +40,7 @@ for(var i=0; i<load_size; i++) {
     }
     db.foopeople.save(data);    
 }
-return;
+//return;
 console.log( 'There are now ' + db.foopeople.count() + ' foopeople.');
 // check that Person73 is 73 years old.
 var p73 = db.foopeople.findOne( { name : 'Person73' } );
@@ -50,10 +49,9 @@ console.log( 'Person73 is ' + p73.age + ' years old.');
 db.foopeople.ensureIndex( { email : 1 } );
 db.foopeople.reIndex();
 // find the folks where 20 <= age < 30
+debugger;
 var twentySomethings = db.foopeople.find( { $and : [ { age : { $gte : 20 } }, { age : { $lt : 30 } } ] } );
-for(var dude in twentySomethings) {
-    console.log(dude.name); 
-}
+console.dir(twentySomethings);
 /*
 if ( db.foopeople.count() > 0 ) {
     db.foopeople.remove();  // clean out
