@@ -1,11 +1,8 @@
 var net = require('net');
-var crypto = require('crypto');
-var bson = require('mongodb').pure().BSON;
 var END_OF_MESSAGE = '\n';
 var ackProp = '~*-globalsdb-*~';
 function Client(options) {
 	var self = this;
-	// opts = { resultMode : 'batch' }
 	self.resultMode_batch = 'batch';
 	self.resultMode_stream = 'stream'
 	self.resultMode = self.resultMode_batch; // default is to batch...
@@ -62,7 +59,6 @@ Client.prototype.connect = function(options) {
         console.dir('client.connect ==');
     });
 	self.client.on('error', function (error) {
-		//self.datacb(error);
         console.dir("error-------------- client.on");
 		console.error(error);
         console.trace();
@@ -73,7 +69,6 @@ Client.prototype.connect = function(options) {
 	var current_result_msg_id = '';
 	var batch = [];
 	self.client.on('data', function(data) {
-		//console.dir('data event - data='+data);
  		var objects = data.toString().split('\n');
 		if ( partial_object.length>0 ) {
 			objects[0] = partial_object + objects[0];
@@ -84,15 +79,10 @@ Client.prototype.connect = function(options) {
 			}
 			try {
 				var o = JSON.parse(objects[i]);
-				//console.log('got object back from server ~~~~~~~~~~~');
-				//console.dir(o);
-				//console.dir(self.datacb);
-				//console.log('~~~~~~~~~~~~~~~~~~~');
 				if ( self.isACKObject(o) ) {
 					batch_result_size = o[ackProp]['result_count'];
 								batch_result_counter = 0;		// reset - got new ack
 					current_result_msg_id = o[ackProp]['id'];
-					//console.dir('------------>current__result_msg_id='+current_result_msg_id);
 					if ( batch_result_size === 0 ) {
 						self.dataCallbacks[current_result_msg_id]({count:0},[]);
 					}
@@ -100,20 +90,13 @@ Client.prototype.connect = function(options) {
 				} else {
 					batch_result_counter++;
 					if ( self.resultMode == self.resultMode_stream ) {	
-						//console.log('+++++++++++++++++++++++++++++++++++++++++++++++');
-						//self.datacb({},o);		// NOTE: we stream back each object as we get it
-						// lookup the callback.
 						self.dataCallbacks[current_result_msg_id]({},o);
 					} else { // batch mode
 						batch.push(o);
 						if ( batch_result_counter == batch_result_size ) {
-							//console.log('calling datacb' + self.dataCallbacks[current_result_msg_id].toString());
 							self.dataCallbacks[current_result_msg_id]({},batch);
-							//self.datacb({},batch);
 						} else {
-							//batch.push(o);
 						}
-						//batch_result_counter++;
 					}
 				}
 				partial_object = '';
@@ -128,10 +111,7 @@ Client.prototype.connect = function(options) {
 }
 Client.prototype.close = function() {
 	var self = this;
-	//console.dir('client - close ' + self.client);
-	//console.trace();
 	if ( self.client !== undefined ) {
-		//console.log('client - close - calling end()');
 		self.client.end();
 	}
 }
@@ -139,21 +119,15 @@ Client.prototype.close = function() {
 Client.prototype.send = function(data,callback) {
 	var self = this;
 	var msg = {};
-	//self.datacb = self.default_datacb;
-	//console.log('client.send ---' + callback.toString());
 	if ( callback === undefined ) {
-		//self.datacb = callback;
 		callback = self.default_datacb;		// how to make sync?
 	}
 	msg.header = { id : self.get_id(), name : self.name, ts : (new Date()) };
 	msg.data = data;
 	self.dataCallbacks[msg.header.id]=callback;
-	//console.log('%%%%%%%%%%%%%%%%%%%%%%%');
-	//console.dir(self.dataCallbacks);
 	var json = JSON.stringify(msg);
 	self.client.write( json );
 	self.client.write(END_OF_MESSAGE);
-	//console.log('client wrote');console.dir(json);
 } 
 	
 Client.prototype.global_directory = function(callback) {
@@ -161,11 +135,7 @@ Client.prototype.global_directory = function(callback) {
 	var request = {};
 	request.op = "global_directory";
 	request.params = [];
-	//console.dir('client global_dir: ');
-	//console.trace();
-	//console.dir(request);
 	self.send(request, function (e,r) {
-		//console.dir('client global_dir callback');console.dir(r);
 		callback(e,r.pop());
 	});
 }	

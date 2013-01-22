@@ -1,10 +1,7 @@
 //#globalsd - network deamon for globalsjs driver
-//var crypto = require('crypto');
 var util = require('util');
 var events = require('events');
-//var bson = require('mongodb').pure().BSON;
 var cachedb = require('../../globalsjs');
-// TODO read from command line
 var deamon_opts = {};
 
 function usage() {
@@ -159,7 +156,8 @@ globalsd.prototype.start = 	function() {
 				console.dir(util.inspect(self.clients,5));
   		});
 		c.on('data', function(data) { 
-				var object_buffer = [];
+			debugger;
+            var object_buffer = [];
 			  var json = data.toString('utf8',0);	
 				console.dir('data---',json);
 				var objects = json.split(END_OF_MESSAGE);
@@ -265,23 +263,15 @@ function gdb_request_handler(globals_deamon) {
 			}
 		}
 
-
-
-
 		var collection = req.data.collection;
 		var operation = '';
 		var result;
 		if ( !collection ) {
-			//console.dir('~~~~~~~~~~~~');
 			operation = cachedb.Db.prototype[req.data.op];
-			//console.dir(operation);
 			result = operation.call(db,req.data.params);
 			console.dir('~~~~~~~~~');console.dir(req.data.params);
-			//console.dir('#######################');console.dir(result);
 		} else {
-			//console.dir('~~~~~~~~~~~~');
 			operation = cachedb.Collection.prototype[req.data.op];
-			//console.dir('~~~~~~~~~~~~');
 			if ( operation === undefined ) {
 				bad_request(socket);
 				console.log('400');console.log(req);

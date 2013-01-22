@@ -1,3 +1,7 @@
+/*
+ * globalsjs api
+ *
+ */
 function debug(msg) {
 	if ( !(process.env.GLOBALSJS_DEBUG_OUTPUT === 'true') ) { return; }
 	if ( typeof msg === 'object' ) { 
@@ -411,6 +415,7 @@ Collection.prototype.findOne = function(query, callback) {
 			callback(error, self.first_object(result));
 		});
 	} else {
+        debugger;
 		var results = self.find(query);
 		//debug(results);
 		if ( results.length>0 ) {
@@ -425,10 +430,7 @@ Collection.prototype.find = function(query, callback) {
 	// search through for the right rows and return
 	var self = this;
 	var stat_ref = undefined;
-	if ( self.db.recordQueryStats ) {
-		stat_ref = self.start_query_stats(query);
-	}
-	//console.log('Collection.prototype.find --> query=');console.dir(query);
+    //console.log('Collection.prototype.find --> query=');console.dir(query);
 	//console.log(query instanceof Array); 
 	if ( query instanceof Array ) {
 		query = query.pop();
@@ -436,10 +438,6 @@ Collection.prototype.find = function(query, callback) {
 	// if remote, forward to tcp-client-
 	if ( self.db.isRemoteConnection ) {
 		var req = {};
-	   if ( !object ) {
-        debug('remove called with no object - removing all!');
-        self.drop_collection();
-    }
 		req.op = 'find';
 		req.collection = self.name;
 		req.params = [];
@@ -451,6 +449,9 @@ Collection.prototype.find = function(query, callback) {
 		} else { 
 			return self.db.remote_client.send(req);		
 		}
+	}
+    if ( self.db.recordQueryStats ) {
+		stat_ref = self.start_query_stats(query);
 	}
 	//debug("Collection - find ");
  	var gloRef = {global: self.name, subscripts: []};
@@ -714,6 +715,9 @@ Collection.prototype.remove = function(object, callback) {
 //
 Collection.prototype.ensureSQL = function(object, meta, callback) {
     var self = this;
+    if (self.isRemoteConnection ) {
+        return;
+    }
     // check args
     if ( arguments.length == 3 ) { // got meta
         // good to go
@@ -882,23 +886,8 @@ function Server(serverConfig, options) {
 inherits(Server, EventEmitter);
 
 Server.prototype.connect = function(dbInstance, options, callback) {
-	//debug(callback);
 	var self = this;
-	//debug('cachedb - Server connect');
 	var cacheConnection = new cache.Cache(); 
-	/*
-	process.on('exit', function() {
-		debug('Server.connect - process exit event hander');
-		debug(cacheConnection);
-		try {
-			cacheConnection.close();
-		} catch(Exception) {
-				debug(Exception);
-			console.dir(Exception);
-			console.log('121212');
-		}
-	});		
-	*/
 	if ( gotCallback(callback) ) {
 		cacheConnection.open( options.___connection, function(error, result) {
 			dbInstance.cacheConnection = cacheConnection;
@@ -911,19 +900,9 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 		return r;
 	}
 }
-
-// Not sure if need to expose this right now..
-// Globals only works 'inprocess', so there is no real concept
-// of a connection to a server over a network - the config will always
-// just be the path to the Globals install
-// Of course, if we have sharding, then we might have some other instances
-//exports.Server = Server;
-
-
 function Db(databaseName, options) {
 	var self = this;
 	self.collection_names = [];
-	//console.log('------------ ****** ------ ');console.dir(self.collection_names);
 	self.server = new Server(options);
 	self.const_options = options;
 	self.databaseName = databaseName;
@@ -948,27 +927,22 @@ function Db(databaseName, options) {
 	});
 	
 	process.on('uncaughtException', function() {
-		//debug('caught uncaughtException',arguments);
 		console.log('caught uncaughtException');console.dir(arguments);
 		console.trace();
 		self.cleanup();
 	});
 
 	function init_remote_connection(url) {
-        //debugger;
 		var options = get_options_from_url(url);
 		if ( self.const_options && self.const_options.resultMode !== undefined ) {
 			options.resultMode = self.const_options.resultMode;
 		}
 		self.remote_client = new globalsd_client.Client(options);	
-		//debugger;
 		self.remote_client.connect();
-		//callback({},{OK:1});
 	}
 	function get_options_from_url(c) {	
 		var opts = {};
 		var purl = url.parse(c);
-		//console.log('get_options_from_url');console.dir(purl);
 		if ( purl.hostname !== undefined ) {
 			opts.host = purl.hostname;
 		} else {
@@ -991,14 +965,7 @@ function Db(databaseName, options) {
 	}
 	function init_collections(options) {
 		var self = this;
-		// save off options - async requires new connections
-		//self.options = options;
-		//console.dir(self.options);
-		// load up the run-time specified collections
 		if ( options.collections !== undefined ) {
-			//console.log('@@@@@@@@@@@@@@@@@@@@@@');
-			//console.dir(options);
-			//console.trace();
 			var rtcols = options.collections;
 			rtcols.forEach(function(name) {
 				self[name] = new Collection(name,self);
@@ -1008,7 +975,8 @@ function Db(databaseName, options) {
 			});
 		}
 		var globals = [];
-		//console.dir('self.isRemoteConnection='+self.isRemoteConnection);
+        // DO NOT - automatically try to fetch global_directory
+        debugger;
 		if ( self.isRemoteConnection ) {
 			self.remote_client.global_directory(function(e,glos) {
 			console.log('remote_client global_directory callback');
@@ -1018,7 +986,7 @@ function Db(databaseName, options) {
 			for(var i=0; i<keys.length; i++) {
 				var key = keys[i];  
 				var name = glos[key];
-		  	if ( self.name === undefined ) { 		// don't create again.
+		  	    if ( self.name === undefined ) { 		// don't create again.
 					if ( Collection.non_system_global(name) ) {
     				self[name] = new Collection(name, self);
 						self.collection_names.push(name);
@@ -1032,9 +1000,20 @@ function Db(databaseName, options) {
 			// this is NOT async on purpose, the connection
 			// isn't ready for use until it's initialized.
 	  	    globals = self.cacheConnection.global_directory({});
-            debug('NOT adding collection for each existing global!!!!!!');
-            debug(globals);
-            globals = [];
+            //debug('NOT adding collection for each existing global!!!!!!');
+            // The problem here is that if you connect up to a
+            // namespace which has other Caché stuff - like regular 
+            // persistent Caché classes, then those globals would load
+            // but they do not follow the storage strategy of globalsdb,
+            // thus things get messed up.
+            // For now - you need to explicitly call out the collections
+            // you want to access
+            // TODO: add some meta data about the 'globalsjs' collections
+            // TODO TODO: get the cache.node to store data using the right strategy
+            // so that anything you create here is automatically kosher with everything
+            // else in Caché.
+            //debug(globals);
+            //globals = [];
 			globals.forEach(function(name) {  
 		  	if ( self.name === undefined ) { 		// don't create again.
 					if ( Collection.non_system_global(name) ) {
@@ -1055,10 +1034,9 @@ function Db(databaseName, options) {
             This only really makes sense for local connections - the tcp
             connections will eventually go over the wire and land up here anyway.
             **/
+            debugger;
             var sqldon = self.cacheConnection.get('globalsjs.sql','control','enabled');
-            if ( sqldon ) {
-                console.log('sqldon='+sqldon);
-            }
+            debug('sqldon='+sqldon);
         }
 	}
 	/*
@@ -1155,11 +1133,10 @@ Db.prototype.connect = function(options, callback) {
 	var self = this;
 	if ( !options ) {
 		options = {};
-		//debug(options);
 	}	
 	// right now, url is just the path to the globalsdb mgr directory
 	// user,password and namespace don't seem to matter at all!
-	var pathToGlobalsMGR = self.databaseName;		// TO-DO check it's valid
+	var pathToGlobalsMGR = self.databaseName;		// TODO check it's valid
     //console.log('about to check remote');
 	if ( isRemoteDB( pathToGlobalsMGR ) ) {
 		self.isRemoteConnection = true;
