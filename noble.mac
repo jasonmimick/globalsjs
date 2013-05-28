@@ -1,0 +1,339 @@
+tv(x) public {
+    return x
+}
+tu(url) public {
+    set req=##class(%Net.HttpRequest).%New()
+    do ##class(%Net.URLParser).Parse(url,.u)
+    set req.Server = u("host")
+    if ( $data(u("port"))) {
+        set req.Port = u("port")
+    }
+    set sc=req.Get( $g(u("path"),"/") )
+    set ^foo(url,"sc")=sc
+    /*
+    while ( 'req.HttpResponse.Data.AtEnd ) {
+        set ^foo(url,$i(^foo(url)))=req.HttpResponse.Data.ReadLine()
+    }
+    return req.HttpResponse.StatusCode
+    */
+}
+rf(file) public {
+    set f=##class(%File).%New(file)
+    kill ^foo(file)
+    set ^foo(file)=$ZDT($H)
+    set sc=f.Open("RU")
+    set f.LineTerminator=$c(10)
+    while ( 'f.AtEnd ) {
+        set line=f.ReadLine()
+        set ^foo(file,$i(^foo(file)))=line
+    }
+    quit file 
+}
+readFile(file) public {
+    set stream = ##class(%Stream.FileCharacter).%New()
+    set sc=stream.Filename=file
+    set r=stream.Rewind()
+    set ^foo($i(^foo))=file_" AtEnd="_stream.AtEnd_" r="_r
+    while ( 'stream.AtEnd ) {
+        set line = stream.ReadLine()
+        set ^foo(file,$i(^foo(file)))=line
+    }
+    return file
+}
+loadFiles(files...) public {
+    for i=1:1:files {
+        do $system.OBJ.Load(files(1),"ck")
+    }
+    return "OK"
+}
+loadAndCompileMac(file) public {
+    set source=##class(%File).%New(file)
+    set sc=source.Open("R")
+    set routineName=source.GetFilename(file)
+    set routine=##class(%Routine).%New(routineName)
+    while ('source.AtEnd) {
+        set line=source.ReadLine()
+        Do routine.WriteLine(line)
+    }
+    Do routine.Save()
+    Do routine.Compile("-d")
+    quit 1
+}
+loadAndCompileClass(file) public {
+    /*
+    set source=##class(%File).%New(file)
+    set source.LineTerminator=$c(10)
+    do source.Close()
+    set sc=source.Open("RUS")
+    set sc=source.Rewind()
+    set ^foo($i(^foo))=sc_"~"_file_" AtEnd="_source.AtEnd
+    */
+    open file:"RU"
+    set gotEOF=0
+    //while ( 'source.AtEnd ) {
+    while ( 'gotEOF ) {
+        //set line = source.ReadLine()
+        /**/
+        try {
+            use file:("":"":$C(10)) read line
+            //use file read line
+        } catch (error) {
+            set gotEOF=1
+            close file
+            break
+        }
+        /**/
+        set ^foo($i(^foo))=line
+        set line=$zstrip(line,"<W")
+        set lineType = $zconvert($piece(line," ",1),"L")
+        if ( lineType="class") {
+            set className = $piece(line," ",2)
+            set supers = $piece(line," ",4)
+            set cdef("className")=className
+            set cdef("supers")=supers
+            continue
+        }
+        // TO-DO deal with attributes in []'s
+        if ( lineType="property") {
+            set pi=$i(cdef("properties"))
+            set line=$p(line,";",1)
+            set propName=$piece(line," ",2)
+            set type=$piece(line," ",4)
+            set cdef("properties",pi,"propName")=propName
+            set cdef("properties",pi,"type")=type
+            continue
+        }
+        if ( (lineType="method") || (lineType="classmethod") ) {
+            set lt=lineType_"s"
+            set mi=$i(cdef(lt))
+            set line=$piece(line,"{",1)
+            set line=$zstrip(line,">W")
+            set m1=$piece(line,")",1)
+            set methodNameAndSignature=$piece(m1," ",2,$l(m1," "))
+            set methodName=$piece(methodNameAndSignature,"(",1)
+            set formalSpec=$piece($piece(methodNameAndSignature,"(",2),")",1)
+            set returnType=""
+            if ( $zconvert(line,"L")["as" ) {   // if there is a return type
+                set returnType=$piece(line," ",$length(line," "))
+            }
+            set cdef(lt,mi,"methodName")=methodName
+            set cdef(lt,mi,"formalSpec")=formalSpec
+            set cdef(lt,mi,"returnType")=returnType
+            // read in implementation
+            set done=1
+            k cls
+            while ( done'=0 ) {
+                // throw if source.AtEnd pops up
+                set cl=source.ReadLine()
+                if ( cl["{" ) { set done=done+1 }
+                if ( cl["}" ) { set done=done-1 }
+                if ( done'=0 ) {
+                    set i=$i(cls)
+                    set cls(i)=cl
+                }
+            }
+            if ( $data(cls) ) {
+                merge cdef(lt,mi,"implementation")=cls
+            }
+        }
+        if ( lineType="parameter" ) {
+        }
+        if ( lineType="classmethod" ) {
+        }
+    }
+    // TO-DO pre-process cdef array to check to validity
+    //zw cdef
+    // generate the class
+    if ( $data(^oddDEF(cdef("className")) )) {
+        do $system.OBJ.Delete( cdef("className"),"-d" )
+    }
+    set classDef=##class(%Dictionary.ClassDefinition).%New(cdef("className"))
+    set classDef.Name = cdef("className")
+    set classDef.ProcedureBlock = 1
+    set classDef.Super = cdef("supers")
+    for i=1:1:cdef("properties") {
+        set pdef=##class(%Dictionary.PropertyDefinition).%New()
+        set pdef.Name = cdef("properties",i,"propName")
+        set pdef.Type = cdef("properties",i,"type")
+        do classDef.Properties.Insert(pdef)
+    }
+    for mtype="methods","classmethods" {
+        for i=1:1:cdef(mtype) {
+            set mdef=##class(%Dictionary.MethodDefinition).%New()
+            set mdef.Name = cdef(mtype,i,"methodName")
+            set mdef.ReturnType = cdef(mtype,i,"returnType")
+            set mdef.FormalSpec = $$translateFormalSpec^noble(cdef(mtype,i,"formalSpec"))
+            set codeStream = ##class(%Stream.TmpCharacter).%New()
+            for j=1:1:cdef(mtype,i,"implementation") {
+                do codeStream.WriteLine( cdef(mtype,i,"implementation",j) )
+            }
+            do codeStream.Rewind()
+            set mdef.Implementation = codeStream
+            do classDef.Methods.Insert(mdef)
+        }
+    }
+    set sc=classDef.%Save()
+    do $system.OBJ.Compile(classDef.Name,"-d")
+    //zw classDef
+    return 1 
+
+}
+translateFormalSpec(in) public {  // Name As %String, Age As %Integer
+                                  // to Name:%String,Age:%Integer
+    set out=in
+    for output="output ","Output ","OUTPUT " {
+        set out=$replace(out,output,"*")
+    }
+    for byref="byref ","ByRef ","BYREF " {
+        set out=$replace(out,byref,"&")
+    }
+    for as=" as "," As "," aS "," AS " {
+        set out=$replace(out,as,":")
+    }
+    return out
+}
+loadAndCompile(files...) public {
+    for i=1:1:files {
+        set f = files(i)
+        set ext=$p(f,".",$l(f,"."))
+        //write "loading "_f_" ext:"_ext,!
+        set ^foo($i(^foo))="f="_f_" ext="_ext
+        if ( ext="cls" ) {
+            set sc=$$loadAndCompileClass(f)
+            continue
+        } 
+        if ( ext="mac" ) {
+            set sc=$$loadAndCompileMac(f)
+            continue
+        }
+        //write "Can't load "_f_" yet"
+    
+    }
+    return "OK"
+}
+proxyObjectToArray(zpo,array) public {
+	
+	
+		do zpo.%CopyToArray(.array)
+	
+		s p=$order(array(""))
+		while ( p'="" ) {
+		if ( $isobject( array(p) ) ) {
+			if ( $classname(array(p))="%ZEN.proxyObject") {
+				do proxyObjectToArray^noble( array(p), .k )
+				set array(p)=""
+				merge array(p)=k
+			} elseif ( $classname(array(p)) = "%Library.ListOfObjects" ) {
+				for i=1:1:array(p).Count() {
+					do proxyObjectToArray^noble( array(p).GetAt(i), .k)
+					merge array(p,i)=k		
+				}
+				set array(p)=""
+			}
+		} 		
+		set p=$order(array(p))
+	}
+}
+f(zpo) public {
+	do proxyObjectToArray^noble(.zpo,.a)
+	merge ^noble.foo("a")=a
+}
+g(p) public {
+	merge ^g=p
+	do ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(p,,.zpo)
+	do f^noble(zpo)
+
+}
+Test1(p) public {	
+	try {
+	//do pOTTATest()
+	set ^noble.foo=p
+	//do g(p)	
+	do ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(p,,.zpo)
+	
+	//do f^noble(.zpo)
+	do proxyObjectToArray^noble(zpo,.a)
+	//s a=1
+	merge ^noble.foo($i(^noble.foo))=a
+	do ##class(noble.EnsembleUtils).createProduction(a)
+	} catch (exception) {
+		do exception.Log()
+		do exception.OutputToDevice()
+	}
+	quit "{ ""status"" : 1 }"
+		
+}
+
+pOTTATest() public {
+	set zpo = ##class(%ZEN.proxyObject).%New()
+	set zpo.Age = 5
+	set zpo.Date = $H
+	set zpo.Name = "Jimmy Carter"
+	set zpo.Address = ##class(%ZEN.proxyObject).%New()
+	set zpo.Address.Street = "6000 Pennsylvania Avenue"
+	set zpo.Address.City = "Washington DC"
+	set zpo.Address.Billing = ##class(%ZEN.proxyObject).%New()
+	set zpo.Address.Billing.Street = "55 Peanut Lane"
+	set zpo.Address.Billing.City = "Podunka, GA"
+		
+	do proxyObjectToArray^noble(zpo,.a)
+	merge ^noble.foo("test")=a
+	//zw a
+}
+getActiveProductionInfo() public {
+	//set info=##class(%ZEN.proxyObject).%New()
+	set info("name")=##class(Ens.Director).GetActiveProductionName()
+	set info("status")=##class(Ens.Director).IsProductionRunning()
+	//set json=##class(%ZEN.Auxiliary.jsonProvider).%WriteJSONFromObject("",.info)
+	return $$simpleArrayToJSON(.info)
+}
+onRequest(request, targetConfigNames) public {
+	#dim adapter as Ens.InboundAdapter
+	#dim error as %Exception.AbstractException
+	try {
+	set response("raw_request")=request
+	set response("targetConfigNames")=targetConfigNames
+    // we should just pass the name of the target service in 
+    // the request url!
+	set adapter = ^noble.adapters(targetConfigNames)
+	set sr = ##class(Ens.StringContainer).%New()
+	set sr.StringValue=request
+	Set tSC = ##class(Ens.Director).CreateBusinessService(adapter, .service)
+	set sc=service.ProcessInput(sr,.eres)
+	set response("eres")=eres
+	set response("ts")=$ZDT($H)
+	merge ^noble.http.req($i(^noble.http.req))=response
+	//set json=##class(%ZEN.Auxiliary.jsonProvider).%WriteJSONFromObject("",.response)
+	return $$simpleArrayToJSON(.response)
+	} catch(error) {
+		return "{error:"""_error.DisplayString()_"""}"
+	}		
+}
+simpleArrayToJSON(array) public {
+	set k=$order(array(""))
+	set json="{"
+	while ( k'="" ) {
+		//if ( $isobject(array(k)) ) {
+		//	
+		//} else {
+			set json=json_""""_k_""":"""_array(k)_""""
+		//}
+		set k=$order(array(k))
+		set:k'="" json=json_","
+	}
+	set json=json_"}"
+	quit json
+}
+httpserver(noblehome,port,targetConfigNames,serviceClass) public {
+	set cmd="node "_noblehome_"/ensemble.httpserver.js "_port_" "_$system.Util.InstallDirectory()_"mgr/ "_$namespace_" "_targetConfigNames   //_" > /tmp/noble.http.log"
+	//u 0 w "cmd=",cmd,!
+	//set x=$zf(-1,cmd)	// this will just wait
+	/*
+	open "|CPIPE|":cmd:"RQ"
+	while ('$get(^noble.httpserver("stop"))) { use "|CPIPE|" read x u 0 w x,! set ^noble.httpserver.log($i(^noble.httpserver.log))=x }
+	kill ^noble.httpserver("stop")
+	close "|CPIPE|"
+	*/
+	set ^noble.adapters(targetConfigNames)="node" //serviceClass
+	set x=$zf(-2,cmd)
+}

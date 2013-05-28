@@ -1,0 +1,41 @@
+<html>
+    <head>
+        <script src="http://maps.googleapis.com/maps/api/js?libraries=geometry&sensor=true_or_false">
+        </script>
+        // jquery
+        <script src="http://code.jquery.com/jquery-1.8.3.js"></script>    
+        <script>
+    var map;
+
+    function initialize() {
+        var mapOptions = {
+            zoom: 2,
+            center: new google.maps.LatLng(2.8, -187.3),
+            mapTypeId: google.maps.MapTypeId.TERRAIN
+        };
+
+        map = new google.maps.Map(document.getElementById('map_canvas'),mapOptions);
+    }
+    
+    // this page connects back to a 'web-service' hosted by a node process.
+    // http://localhost:1960  for testing - biggest earthquake since 1900 was in 1960 Valvida, Chile - 9.5!
+    $(function() {
+        $.get('/quakes?timeline=?'+timeline, function(quakes) {
+            for (var i = 0; i < results.features.length; i++) {
+                    var coords = results.features[i].geometry.coordinates;
+                        var latLng = new google.maps.LatLng(coords[1], coords[0]);
+                            var marker = new google.maps.Marker({
+                                      position: latLng,
+                                            map: map,
+                                                });
+                                                  }
+        });
+
+    })();
+
+    </script>
+    </head>
+    <body>
+        <div id="map_canvas"></div>
+    </body>
+</html>

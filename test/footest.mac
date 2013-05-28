@@ -1,0 +1,6 @@
+hello(dude) public {
+    return "Hello there "_dude_"!"
+}
+add(x,y) public {
+    return x+y
+}

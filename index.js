@@ -415,7 +415,6 @@ Collection.prototype.findOne = function(query, callback) {
 			callback(error, self.first_object(result));
 		});
 	} else {
-        debugger;
 		var results = self.find(query);
 		//debug(results);
 		if ( results.length>0 ) {
@@ -623,7 +622,6 @@ Collection.prototype.save = function(object, callback) {
 		// for async index maintenance, will need to wrap callback...
 		//console.dir(glo_ref);
 		self.db.cacheConnection.update( glo_ref, 'object', function(e,o) {
-			//debugger;
 			var result = self.update_index(self.index_operation.SAVE, object);
 			callback(e,result);
 		} );
@@ -889,15 +887,33 @@ Server.prototype.connect = function(dbInstance, options, callback) {
 	var self = this;
 	var cacheConnection = new cache.Cache(); 
 	if ( gotCallback(callback) ) {
-		cacheConnection.open( options.___connection, function(error, result) {
-			dbInstance.cacheConnection = cacheConnection;
-			callback(error,result);
-		});
-	} else {
-		var r = cacheConnection.open( options.___connection );
-		dbInstance.cacheConnection = cacheConnection;
-		debug('server.connect dbInstance.cacheConnection',cacheConnection,r);
-		return r;
+		/**/
+        options.___connection.nspace = options.___connection.namespace;
+        debugger;
+        cacheConnection.open( options.___connection, function(error, result) {
+                //debugger;
+                if ( error ) { callback(error,result); }
+			    dbInstance.cacheConnection = cacheConnection;
+			    // ensure we're in the namespace asked for - 
+                if (cacheConnection.function("$$Access^%NSP",options.namespace)!=1) {
+                     error = {};
+                     error.Message = "Unable to change to namespace='"+options.namespace+"'";
+                }
+                callback(error,result);
+		    });
+        } else {
+            try {
+		        var r = cacheConnection.open( options.___connection );
+		        dbInstance.cacheConnection = cacheConnection;
+		        // ensure we're in the namespace asked for - 
+                if (cacheConnection.function("$$Access^%NSP",options.namespace)!=1) {
+                     error = {};
+                     error.Message = "Unable to change to namespace='"+options.namespace+"'";
+                     return error;
+                }
+                debug('server.connect dbInstance.cacheConnection',cacheConnection,r);
+		        return r;
+            } catch (error) { throw error; }
 	}
 }
 function Db(databaseName, options) {
@@ -976,7 +992,7 @@ function Db(databaseName, options) {
 		}
 		var globals = [];
         // DO NOT - automatically try to fetch global_directory
-        debugger;
+        //debugger;
 		if ( self.isRemoteConnection ) {
 			self.remote_client.global_directory(function(e,glos) {
 			console.log('remote_client global_directory callback');
@@ -1034,9 +1050,12 @@ function Db(databaseName, options) {
             This only really makes sense for local connections - the tcp
             connections will eventually go over the wire and land up here anyway.
             **/
-            debugger;
+            //debugger;
             var sqldon = self.cacheConnection.get('globalsjs.sql','control','enabled');
             debug('sqldon='+sqldon);
+            //console.dir('---------------');
+            //console.dir(self.cacheConnection);
+            //console.dir('---------------');
         }
 	}
 	/*
@@ -1130,6 +1149,7 @@ function isRemoteDB(connstr) {
 
 }
 Db.prototype.connect = function(options, callback) {
+    debugger;
 	var self = this;
 	if ( !options ) {
 		options = {};
@@ -1149,7 +1169,7 @@ Db.prototype.connect = function(options, callback) {
 		return;
 	}
 	//var userName = "BugsBunny",password = "";
-	var userName = "_system",password = "SYS";
+	var userName = "_SYSTEM",password = "SYS";
 	var namespace = "SAMPLES";
 	if ( options.namespace ) { namespace = options.namespace; }
 	options['___connection'] = { path : pathToGlobalsMGR, username : userName, password : password, namespace : namespace};
@@ -1157,6 +1177,7 @@ Db.prototype.connect = function(options, callback) {
 	if ( gotCallback(callback) ) {
 		self.server.connect(this,options, function(error, result) {	
 			if ( !error ) {
+
 				self.init_collections(options);
 			}
 			callback(error, result);
@@ -1168,6 +1189,35 @@ Db.prototype.connect = function(options, callback) {
 		return r;
 	}
 	
+}
+Db.prototype.namespace = function(new_namespace) {
+    var self = this;
+    if ( new_namespace ) {
+        self.cacheConnection.function("$$Access^%NSP",new_namespace);
+    }
+    return self.cacheConnection.function("DEFDIR^%SYS.GLO");
+}
+Db.prototype.function = function(parameters, callback) {
+    var self = this;
+    if ( typeof arguments[0] == 'object' ) {
+        debugger;
+        var o = arguments[0];
+        if ( o.function.indexOf('^')==-1 ) {    // convert class.method calls
+            console.dir(o);
+            var fn = o.function.split('.');
+            o.function = "$$cw^gu";
+            var args = [];
+            args.push( fn.slice(0,fn.length-1).join('.') );
+            args.push( fn[fn.length-1] );
+            for (var i=0; i<o.arguments.length; i++) {
+                args.push(o.arguments[i]);
+            }
+            o.arguments = args;
+            arguments[0] = o;
+        }
+    }
+    return self.cacheConnection.function.apply(self.cacheConnection,arguments);
+
 }
 exports.Db = Db;
 

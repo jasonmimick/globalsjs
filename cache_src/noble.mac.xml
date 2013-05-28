@@ -1,0 +1,193 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Export generator="Cache" version="25" zv="Cache for UNIX (Apple Mac OS X for x86-64) 2013.1 (Build 443U)" ts="2013-05-14 22:22:49">
+<Routine name="noble" type="MAC" languagemode="0" timestamp="62956,58029.6813"><![CDATA[
+loadFiles(files...) public {
+    for i=1:1:files {
+        do $system.OBJ.Load(files(1),"ck")
+    }
+    return "OK"
+}
+loadAndCompileMac(file) public {
+    set source=##class(%File).%New(file)
+    set sc=source.Open("R")
+    set routineName=source.GetFilename(file)
+    set routine=##class(%Routine).%New(routineName)
+    while ('source.AtEnd) {
+        set line=source.ReadLine()
+        Do routine.WriteLine(line)
+    }
+    Do routine.Save()
+    Do routine.Compile()
+    quit 1
+}
+loadAndCompileClass(file) public {
+    set source=##class(%File).%New(file)
+    set sc=source.Open("R")
+    while ( 'source.AtEnd ) {
+        set line = source.ReadLine()
+        set line=$zstrip(line,"<W")
+        set lineType = $zconvert($piece(line," ",1),"L")
+        if ( lineType="class") {
+            set className = $piece(line," ",2)
+            set supers = $piece(line," ",4)
+            write "className=",className,!
+            write "supers=",supers,!
+        }
+        if ( lineType="property") {
+        }
+        if ( lineType="method" ) {
+        }
+        if ( lineType="parameter" ) {
+        }
+        if ( lineType="classmethod" ) {
+        }
+        //u 0 write line,!
+    }
+    return 1 
+
+}
+loadAndCompile(files...) public {
+    for i=1:1:files {
+        set f = files(i)
+        set ext=$p(f,".",$l(f,"."))
+        write "loading "_f_" ext:"_ext,!
+        if ( ext="cls" ) {
+            set sc=$$loadAndCompileClass(f)
+            continue
+        } 
+        if ( ext="mac" ) {
+            set sc=$$loadAndCompileMac(f)
+            continue
+        }
+        write "Can't load "_f_" yet"
+    
+    }
+}
+proxyObjectToArray(zpo,array) public {
+	
+	
+		do zpo.%CopyToArray(.array)
+	
+		s p=$order(array(""))
+		while ( p'="" ) {
+		if ( $isobject( array(p) ) ) {
+			if ( $classname(array(p))="%ZEN.proxyObject") {
+				do proxyObjectToArray^noble( array(p), .k )
+				set array(p)=""
+				merge array(p)=k
+			} elseif ( $classname(array(p)) = "%Library.ListOfObjects" ) {
+				for i=1:1:array(p).Count() {
+					do proxyObjectToArray^noble( array(p).GetAt(i), .k)
+					merge array(p,i)=k		
+				}
+				set array(p)=""
+			}
+		} 		
+		set p=$order(array(p))
+	}
+}
+f(zpo) public {
+	do proxyObjectToArray^noble(.zpo,.a)
+	merge ^noble.foo("a")=a
+}
+g(p) public {
+	merge ^g=p
+	do ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(p,,.zpo)
+	do f^noble(zpo)
+
+}
+Test1(p) public {	
+	try {
+	//do pOTTATest()
+	set ^noble.foo=p
+	//do g(p)	
+	do ##class(%ZEN.Auxiliary.jsonProvider).%ConvertJSONToObject(p,,.zpo)
+	
+	//do f^noble(.zpo)
+	do proxyObjectToArray^noble(zpo,.a)
+	//s a=1
+	merge ^noble.foo($i(^noble.foo))=a
+	do ##class(noble.EnsembleUtils).createProduction(a)
+	} catch (exception) {
+		do exception.Log()
+		do exception.OutputToDevice()
+	}
+	quit "{ ""status"" : 1 }"
+		
+}
+
+pOTTATest() public {
+	set zpo = ##class(%ZEN.proxyObject).%New()
+	set zpo.Age = 5
+	set zpo.Date = $H
+	set zpo.Name = "Jimmy Carter"
+	set zpo.Address = ##class(%ZEN.proxyObject).%New()
+	set zpo.Address.Street = "6000 Pennsylvania Avenue"
+	set zpo.Address.City = "Washington DC"
+	set zpo.Address.Billing = ##class(%ZEN.proxyObject).%New()
+	set zpo.Address.Billing.Street = "55 Peanut Lane"
+	set zpo.Address.Billing.City = "Podunka, GA"
+		
+	do proxyObjectToArray^noble(zpo,.a)
+	merge ^noble.foo("test")=a
+	//zw a
+}
+getActiveProductionInfo() public {
+	//set info=##class(%ZEN.proxyObject).%New()
+	set info("name")=##class(Ens.Director).GetActiveProductionName()
+	set info("status")=##class(Ens.Director).IsProductionRunning()
+	//set json=##class(%ZEN.Auxiliary.jsonProvider).%WriteJSONFromObject("",.info)
+	return $$simpleArrayToJSON(.info)
+}
+onRequest(request, targetConfigNames) public {
+	#dim adapter as Ens.InboundAdapter
+	#dim error as %Exception.AbstractException
+	try {
+	set response("raw_request")=request
+	set response("targetConfigNames")=targetConfigNames
+    // we should just pass the name of the target service in 
+    // the request url!
+	set adapter = ^noble.adapters(targetConfigNames)
+	set sr = ##class(Ens.StringContainer).%New()
+	set sr.StringValue=request
+	Set tSC = ##class(Ens.Director).CreateBusinessService(adapter, .service)
+	set sc=service.ProcessInput(sr,.eres)
+	set response("eres")=eres
+	set response("ts")=$ZDT($H)
+	merge ^noble.http.req($i(^noble.http.req))=response
+	//set json=##class(%ZEN.Auxiliary.jsonProvider).%WriteJSONFromObject("",.response)
+	return $$simpleArrayToJSON(.response)
+	} catch(error) {
+		return "{error:"""_error.DisplayString()_"""}"
+	}		
+}
+simpleArrayToJSON(array) public {
+	set k=$order(array(""))
+	set json="{"
+	while ( k'="" ) {
+		//if ( $isobject(array(k)) ) {
+		//	
+		//} else {
+			set json=json_""""_k_""":"""_array(k)_""""
+		//}
+		set k=$order(array(k))
+		set:k'="" json=json_","
+	}
+	set json=json_"}"
+	quit json
+}
+httpserver(noblehome,port,targetConfigNames,serviceClass) public {
+	set cmd="node "_noblehome_"/ensemble.httpserver.js "_port_" "_$system.Util.InstallDirectory()_"mgr/ "_$namespace_" "_targetConfigNames   //_" > /tmp/noble.http.log"
+	//u 0 w "cmd=",cmd,!
+	//set x=$zf(-1,cmd)	// this will just wait
+	/*
+	open "|CPIPE|":cmd:"RQ"
+	while ('$get(^noble.httpserver("stop"))) { use "|CPIPE|" read x u 0 w x,! set ^noble.httpserver.log($i(^noble.httpserver.log))=x }
+	kill ^noble.httpserver("stop")
+	close "|CPIPE|"
+	*/
+	set ^noble.adapters(targetConfigNames)="node" //serviceClass
+	set x=$zf(-2,cmd)
+}
+]]></Routine>
+</Export>

@@ -1,0 +1,85 @@
+# I can't get no Studio (Satisfaction) - Cache' "compiler"
+# Sussudio - Cache' "compiler"
+# Usage:
+# susudio <options> <files>
+# where 
+# <files> is a ":" delimited list of Cache'e xml export files
+#         to process. 
+#         If files is empty, then we will recursivly
+#         spin from current working directory, looking
+#         for all *.cls.xml, *.mac.xml
+# <options>
+# -cachehome    Path to Cache' install, e.g. /usr/var/cache
+#               (root of install, not mgr)
+#               Default: environment var SUSSUDIO.CACHEHOME
+#
+# -ns           Namespace to load code into
+#               Default: env var SUSSUDIO.NS
+# -
+cache_home={$SUSSUDIO_CACHEHOME}
+ns={$SUSSUSIO_NS}
+cache_src_file=$cache_home/mgr/$ns/.cachesrc_load
+file_count=0
+# parse command line options
+for i in $*
+    do
+        echo "i=$i"
+        case $i in
+        -ch=*|--cachehome=*)
+        cache_home=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+
+        ;;
+        -ns=*|--namespace=*)
+        ns=`echo $i | sed 's/[-a-zA-Z0-9]*=//'`
+        ;;
+        *)
+        # unknown option, assume it's imput files.
+        FILES[${#FILES[@]}]=$i
+        ;;
+        esac
+    done
+echo cache_home = ${cache_home}
+echo ns = ${ns}
+echo {$FILES}
+if [ ${#FILES[@]} -eq 0 ] 
+then
+    SPIN=1
+else
+    SPIN=0
+fi
+# green=32m, red=31m, cyan=36m, yellow=33m
+echo -e "\033[32mRemoving previous $cache_src_file"
+echo -e "\033[0m"
+rm $cache_src_file
+if [ $SPIN -eq 0 ] 
+then
+    echo "Searching for files in current directory"
+    for file in $( find `pwd` -name *.cls.xml ) 
+    do 
+        echo -e "\033[33mAdding: $file"
+        echo -e "\033[0m"
+        echo "$file" >> $cache_src_file 
+    done
+    for file in $( find `pwd` -name *.mac.xml ) 
+    do 
+        echo -e "\033[33mAdding: $file"
+        echo -e "\033[0m"
+        echo "$file" >> $cache_src_file 
+    done
+else
+    for i in "${FILES[@]}"
+    do
+        echo -e "\033[33mAdding: $i"
+        echo -e "\033[0m"
+        echo "$i" >> $cache_src_file
+    done
+fi
+
+
+echo -e "\033[32mLoading following files:"
+cat $cache_src_file
+echo -e "\033[0m"
+echo "Calling Cache', Is anyone out there?"
+echo -e "\033[36m"
+$cache_home/bin/ccontrol session HS -U $ns "^cachesrc"
+echo -e "\033[0m"
